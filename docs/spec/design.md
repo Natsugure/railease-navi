@@ -283,9 +283,19 @@ interface FacilityEditPageQuery {
 
 ### typecheck スクリプトと CI（US-8）
 
-- `apps/web` / `apps/admin` / `apps/scripts` / `packages/database` の `package.json` に
-  `"typecheck": "tsc --noEmit"`（admin/web は `next` のプロジェクト設定を使うため
-  `tsc --noEmit -p .` で可）
+- `apps/scripts` / `packages/database` の `package.json` に `"typecheck": "tsc --noEmit"`
+- `apps/web` / `apps/admin` は **`"typecheck": "next typegen && tsc --noEmit"`**。
+  両者の `tsconfig.json` の `include` は `["src", "next-env.d.ts", ".next/types/**/*.ts"]`
+  だが、`next-env.d.ts`（`.gitignore:48`）と `.next/`（`.gitignore:20`）は
+  いずれも git 管理外である。CI はクリーンチェックアウト後に `build` を挟まないため、
+  型生成を前置しないと以下が解決できず必ず失敗する:
+  - 静的アセットの import（`next/image-types/global` が `*.svg` `*.png` 等を宣言）
+  - Route Handler / Page の props 型（`.next/types/validator.ts`）
+  `next typegen`（Next 15.5+）はフルビルドなしにこの2つを生成する。
+  **`next-env.d.ts` をコミットする案は採らない**: 中身が `next dev` 後は
+  `.next/dev/types/routes.d.ts`、`next typegen` / `next build` 後は `.next/types/routes.d.ts`
+  を指すモード依存で、常時 diff ノイズになるうえ、CI には `.next` が無いため
+  参照先が解決できず問題が別のエラーに置き換わるだけである
 - ルート `package.json`: `"typecheck": "turbo run typecheck"`
 - `turbo.json`: `"typecheck": { "dependsOn": ["^typecheck"] }`（`lint` と同形）
 - `.github/workflows/ci.yml`（新規）:

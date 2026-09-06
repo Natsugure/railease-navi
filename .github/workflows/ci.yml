@@ -25,6 +25,10 @@ jobs:
 
       - run: pnpm run lint
 
+      # web/admin の typecheck は `next typegen` を前置している（package.json 参照）。
+      # `next-env.d.ts` と `.next/types/**` は .gitignore 対象で、tsconfig の include が
+      # それらを指すため、クリーンチェックアウトのままでは静的アセットや Route/Page の
+      # 型宣言が解決できない。typegen を外すとここが必ず落ちる。
       - run: pnpm run typecheck
 
       - run: pnpm run test

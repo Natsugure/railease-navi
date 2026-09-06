@@ -158,8 +158,10 @@ Phase 9: ドキュメント更新（docs/domain 確認・#48/#32 起票更新）
 
 ### Phase 7: typecheck + CI
 
-- [ ] **TASK-7.1** `apps/{web,admin,scripts}` / `packages/database` の `package.json` に
-      `"typecheck": "tsc --noEmit"`
+- [ ] **TASK-7.1** `apps/scripts` / `packages/database` の `package.json` に
+      `"typecheck": "tsc --noEmit"`、`apps/{web,admin}` は
+      `"typecheck": "next typegen && tsc --noEmit"`（`next-env.d.ts` と `.next/types`
+      が git 管理外のため、型生成の前置が無いと CI で必ず落ちる）
 - [ ] **TASK-7.2** ルート `package.json` に `"typecheck": "turbo run typecheck"`
 - [ ] **TASK-7.3** `turbo.json` に `typecheck` タスク（`dependsOn: ["^typecheck"]`）
 - [ ] **TASK-7.4** `.github/workflows/ci.yml` 新規。`pull_request` で
