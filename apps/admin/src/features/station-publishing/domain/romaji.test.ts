@@ -26,6 +26,11 @@ describe('hepburn: 決定的規則', () => {
     expect(hepburn('ベップ')).toBe('beppu');
   });
 
+  it('末尾の促音（次のモーラが無い）は無音として捨てる（境界条件）', () => {
+    expect(hepburn('アッ')).toBe('a');
+    expect(hepburn('ッ')).toBe('');
+  });
+
   it('拗音・外来音（新宿三丁目 相当のカナ）', () => {
     expect(hepburn('シンジュクサンチョウメ')).toBe('shinjukusanchome');
   });

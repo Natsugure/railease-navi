@@ -56,6 +56,11 @@
         "^lint"
       ]
     },
+    "typecheck": {
+      "dependsOn": [
+        "^typecheck"
+      ]
+    },
     "test": {},
     "db:push": {
       "cache": false

@@ -11,7 +11,7 @@ type Props = {
 
 export function OperatorList({ operators }: Props) {
   const [expandedOperator, setExpandedOperator] = useState<string | null>(
-    operators.length === 1 ? operators[0].id : null
+    operators.length === 1 ? (operators[0]?.id ?? null) : null
   );
 
   return (

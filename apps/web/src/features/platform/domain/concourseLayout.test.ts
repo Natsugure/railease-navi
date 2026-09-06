@@ -137,9 +137,9 @@ describe('layoutConcoursePlates', () => {
         BOUNDS,
       );
 
-      expect(groups[0].bracketStartX).toBe(40);
-      expect(groups[0].bracketEndX).toBe(100);
-      expect(groups[0].anchorX).toBe(70);
+      expect(groups[0]!.bracketStartX).toBe(40);
+      expect(groups[0]!.bracketEndX).toBe(100);
+      expect(groups[0]!.anchorX).toBe(70);
     });
 
     it('縦ヒゲのxを昇順・重複除去で返す', () => {
@@ -148,14 +148,14 @@ describe('layoutConcoursePlates', () => {
         BOUNDS,
       );
 
-      expect(groups[0].tickXs).toEqual([40, 70, 100]);
+      expect(groups[0]!.tickXs).toEqual([40, 70, 100]);
     });
 
     it('アクセス点が1件なら束ね線の両端が一致する', () => {
       const { groups } = layoutConcoursePlates([concourse('c1', { cells: cellsAt(50) })], BOUNDS);
 
-      expect(groups[0].bracketStartX).toBe(groups[0].bracketEndX);
-      expect(groups[0].anchorX).toBe(50);
+      expect(groups[0]!.bracketStartX).toBe(groups[0]!.bracketEndX);
+      expect(groups[0]!.anchorX).toBe(50);
     });
 
     // 旧実装は labelX を viewBox 内へクランプしていたが、プレートがHTMLになり
@@ -163,8 +163,8 @@ describe('layoutConcoursePlates', () => {
     it('端に寄せる場合でもアンカーは動かさない', () => {
       const { groups } = layoutConcoursePlates([concourse('c1', { cells: cellsAt(-20) })], BOUNDS);
 
-      expect(groups[0].anchorX).toBe(-20);
-      expect(groups[0].align).toBe('start');
+      expect(groups[0]!.anchorX).toBe(-20);
+      expect(groups[0]!.align).toBe('start');
     });
 
     it('anchorX 昇順で返す', () => {
@@ -189,7 +189,7 @@ describe('layoutConcoursePlates', () => {
         BOUNDS,
       );
 
-      expect(groups[0].exit).toBe(exits);
+      expect(groups[0]!.exit).toBe(exits);
     });
 
     it('乗換先の路線を1件も畳まない', () => {
@@ -204,8 +204,8 @@ describe('layoutConcoursePlates', () => {
         BOUNDS,
       );
 
-      expect(groups[0].transfers[0].lines.map((l) => l.name)).toEqual(lineNames);
-      expect(groups[0].transfers[0].lines.every((l) => l.color === DEFAULT_LINE_COLOR)).toBe(true);
+      expect(groups[0]!.transfers[0]!.lines.map((l) => l.name)).toEqual(lineNames);
+      expect(groups[0]!.transfers[0]!.lines.every((l) => l.color === DEFAULT_LINE_COLOR)).toBe(true);
     });
 
     it('複数の接続をすべて持つ', () => {
@@ -219,7 +219,7 @@ describe('layoutConcoursePlates', () => {
         BOUNDS,
       );
 
-      expect(groups[0].transfers).toHaveLength(2);
+      expect(groups[0]!.transfers).toHaveLength(2);
     });
 
     it('設備の種別名を重複なく持つ（束ね線との対応を文章で示すため）', () => {
@@ -242,7 +242,7 @@ describe('layoutConcoursePlates', () => {
         BOUNDS,
       );
 
-      expect(groups[0].facilityTypeNames).toEqual(['エレベーター', '階段']);
+      expect(groups[0]!.facilityTypeNames).toEqual(['エレベーター', '階段']);
     });
   });
 
@@ -275,17 +275,17 @@ describe('layoutConcoursePlates', () => {
   describe('端寄せ', () => {
     it('描画範囲の中ほどでは中央寄せ', () => {
       const { groups } = layoutConcoursePlates([concourse('c1', { cells: cellsAt(150) })], BOUNDS);
-      expect(groups[0].align).toBe('center');
+      expect(groups[0]!.align).toBe('center');
     });
 
     it('左端にはみ出すなら start に寄せる', () => {
       const { groups } = layoutConcoursePlates([concourse('c1', { cells: cellsAt(-18) })], BOUNDS);
-      expect(groups[0].align).toBe('start');
+      expect(groups[0]!.align).toBe('start');
     });
 
     it('右端にはみ出すなら end に寄せる', () => {
       const { groups } = layoutConcoursePlates([concourse('c1', { cells: cellsAt(318) })], BOUNDS);
-      expect(groups[0].align).toBe('end');
+      expect(groups[0]!.align).toBe('end');
     });
   });
 });
@@ -322,8 +322,8 @@ describe('layoutFacingBanners', () => {
       BOUNDS,
     );
 
-    expect(banners[0].text).toBe('丸ノ内線（池袋方面）は同じホームの向かい側に到着');
-    expect(banners[0].color).toBe('#F62E36');
+    expect(banners[0]!.text).toBe('丸ノ内線（池袋方面）は同じホームの向かい側に到着');
+    expect(banners[0]!.color).toBe('#F62E36');
   });
 
   it('範囲が逆順に登録されていても正規化する', () => {
@@ -332,8 +332,8 @@ describe('layoutFacingBanners', () => {
       BOUNDS,
     );
 
-    expect(banners[0].startX).toBe(40);
-    expect(banners[0].endX).toBe(120);
+    expect(banners[0]!.startX).toBe(40);
+    expect(banners[0]!.endX).toBe(120);
   });
 
   it('範囲が重なるバナーは段を分ける', () => {

@@ -18,6 +18,11 @@ type ConnectionState = {
   notesAboutWheelchair: string;
 };
 
+// 接続 ID を持つ行の配列で保持する。Record にすると noUncheckedIndexedAccess 下で
+// キーアクセスが T | undefined になるが、行は connections から1対1で導出されるため
+// 配列 + find の方が「必ず存在する」ことを表現しやすい（Issue #50）。
+type ConnectionStateRow = ConnectionState & { id: string };
+
 type Props = {
   stationId: string;
   initialData: {
@@ -71,23 +76,19 @@ export function StationEditForm({ stationId, initialData, connections, operators
   const [lon, setLon] = useState(initialData.lon ?? '');
   const [operatorId, setOperatorId] = useState(initialData.operatorId);
   const [notes, setNotes] = useState(initialData.notes ?? '');
-  const [connectionStates, setConnectionStates] = useState<Record<string, ConnectionState>>(() =>
-    Object.fromEntries(
-      connections.map((c) => [
-        c.id,
-        {
-          strollerDifficulty: c.strollerDifficulty ?? '',
-          wheelchairDifficulty: c.wheelchairDifficulty ?? '',
-          notesAboutStroller: c.notesAboutStroller ?? '',
-          notesAboutWheelchair: c.notesAboutWheelchair ?? '',
-        },
-      ])
-    )
+  const [connectionStates, setConnectionStates] = useState<ConnectionStateRow[]>(() =>
+    connections.map((c) => ({
+      id: c.id,
+      strollerDifficulty: c.strollerDifficulty ?? '',
+      wheelchairDifficulty: c.wheelchairDifficulty ?? '',
+      notesAboutStroller: c.notesAboutStroller ?? '',
+      notesAboutWheelchair: c.notesAboutWheelchair ?? '',
+    }))
   );
   const [submitting, setSubmitting] = useState(false);
 
   function updateConnection(id: string, patch: Partial<ConnectionState>) {
-    setConnectionStates((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
+    setConnectionStates((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
   }
 
   async function handleSave() {
@@ -110,9 +111,8 @@ export function StationEditForm({ stationId, initialData, connections, operators
       }),
     });
 
-    const connectionReqs = connections.map((conn) => {
-      const s = connectionStates[conn.id];
-      return fetch(`/api/station-connections/${conn.id}`, {
+    const connectionReqs = connectionStates.map((s) =>
+      fetch(`/api/station-connections/${s.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -121,8 +121,8 @@ export function StationEditForm({ stationId, initialData, connections, operators
           notesAboutStroller: s.notesAboutStroller || null,
           notesAboutWheelchair: s.notesAboutWheelchair || null,
         }),
-      });
-    });
+      })
+    );
 
     const results = await Promise.all([stationReq, ...connectionReqs]);
     const allOk = results.every((r) => r.ok);
@@ -221,7 +221,8 @@ export function StationEditForm({ stationId, initialData, connections, operators
         ) : (
           <Stack gap="lg">
             {connections.map((conn) => {
-              const s = connectionStates[conn.id];
+              const s = connectionStates.find((cs) => cs.id === conn.id);
+              if (!s) return null;
               return (
                 <Card key={conn.id} withBorder padding="md">
                   <Text fw={500} size="sm" mb="md">{displayName(conn)}</Text>
