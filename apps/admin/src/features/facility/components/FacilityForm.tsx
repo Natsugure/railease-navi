@@ -1,7 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import {
   Button, Card, Checkbox, Collapse, Group, NativeSelect,
   NumberInput, Stack, Text, TextInput, Textarea, Title,
@@ -71,15 +71,22 @@ export function FacilityForm({
   const [exits, setExits] = useState(initialData?.exits ?? '');
   const [notes, setNotes] = useState(initialData?.notes ?? '');
   const [cells, setCells] = useState<CellState[]>(
-    initialData?.cells.map((c) => ({
-      xPositionMeters: c.xPositionMeters ?? '',
-      facilities: c.facilities,
-    })) ?? [{ xPositionMeters: '', facilities: [] }]
+    () =>
+      initialData?.cells.map((c) => ({
+        xPositionMeters: c.xPositionMeters ?? '',
+        facilities: c.facilities,
+      })) ?? [{ xPositionMeters: '', facilities: [] }]
   );
   const [connectionRows, setConnectionRows] = useState<ConnectionRowState[]>(
     () => buildConnectionRows(connectedStations, initialData?.connections)
   );
   const [submitting, setSubmitting] = useState(false);
+
+  // 行ごとに connectedStations を線形探索しないための索引
+  const stationById = useMemo(
+    () => new Map(connectedStations.map((s) => [s.id, s])),
+    [connectedStations]
+  );
 
   function addCell() {
     setCells((prev) => [...prev, { xPositionMeters: '', facilities: [] }]);
@@ -337,11 +344,11 @@ export function FacilityForm({
           )}
           <Stack gap={0} bg="white" style={{ border: '1px solid var(--mantine-color-gray-3)', borderRadius: 'var(--mantine-radius-sm)' }}>
             {connectionRows.map((row, i) => {
-              const station = connectedStations.find((s) => s.id === row.stationId);
+              const station = stationById.get(row.stationId);
               const stationPlatforms = station?.platforms ?? [];
               const stationDirections = station?.directions ?? [];
-              const lineLabel = station
-                ? (station.lineName ?? '(路線不明)')
+              const lineLabel = station && station.lines.length > 0
+                ? station.lines.map((l) => l.name).join(' / ')
                 : '(路線不明)';
               const stationLabel = station ? station.name : row.stationId;
               return (

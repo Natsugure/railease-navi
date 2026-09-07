@@ -88,18 +88,37 @@ async function getConnectedStationOptions(stationId: string): Promise<ConnectedS
     : [];
   const directionNameById = new Map(directionRows.map((d) => [d.id, d.displayName]));
 
-  return stationRows.map((s) => ({
-    id: s.id,
-    name: s.name,
-    code: s.code,
-    lineId: s.lineId,
-    lineName: s.lineName,
-    platforms: platformRows
-      .filter((p) => p.stationId === s.id)
-      .map((p) => ({ id: p.id, platformNumber: p.platformNumber })),
-    directions: [...(directionIdsByStation.get(s.id) ?? [])]
-      .map((id) => ({ id, displayName: directionNameById.get(id) ?? '(不明な方面)' })),
-  }));
+  // 駅 ID で畳む。JOIN の結果は「駅×路線」の粒度なので、複数路線を持つ駅は
+  // 同じ駅が複数行になる（stationConnections 側に同一 connectedStationId が
+  // 複数あった場合も同様）。行のまま返すと接続候補リストに同じ駅が並び、
+  // 両方チェックすると facility_connections の
+  // unique(platformLocationId, connectedStationId) で保存に失敗する。
+  // 出現順（lines.name 昇順）は保持する。
+  const byStationId = new Map<string, ConnectedStationOption>();
+  for (const row of stationRows) {
+    let option = byStationId.get(row.id);
+    if (!option) {
+      option = {
+        id: row.id,
+        name: row.name,
+        code: row.code,
+        lines: [],
+        platforms: platformRows
+          .filter((p) => p.stationId === row.id)
+          .map((p) => ({ id: p.id, platformNumber: p.platformNumber })),
+        directions: [...(directionIdsByStation.get(row.id) ?? [])]
+          .map((id) => ({ id, displayName: directionNameById.get(id) ?? '(不明な方面)' })),
+      };
+      byStationId.set(row.id, option);
+    }
+    // leftJoin なので路線を持たない駅では lineId が null になる
+    if (row.lineId !== null && row.lineName !== null
+        && !option.lines.some((l) => l.id === row.lineId)) {
+      option.lines.push({ id: row.lineId, name: row.lineName });
+    }
+  }
+
+  return [...byStationId.values()];
 }
 
 async function getLocationDTO(stationId: string, locationId: string): Promise<FacilityLocationDTO | null> {
@@ -117,10 +136,17 @@ async function getLocationDTO(stationId: string, locationId: string): Promise<Fa
     .where(eq(platformLocations.id, locationId));
   if (!location || !platformIds.includes(location.platformId)) return null;
 
-  const cells = await db
-    .select()
-    .from(platformLocationCells)
-    .where(eq(platformLocationCells.platformLocationId, locationId));
+  // cells と connections は互いに独立。facilities は cells の ID が要るので直列のまま
+  const [cells, connections] = await Promise.all([
+    db
+      .select()
+      .from(platformLocationCells)
+      .where(eq(platformLocationCells.platformLocationId, locationId)),
+    db
+      .select()
+      .from(facilityConnections)
+      .where(eq(facilityConnections.platformLocationId, locationId)),
+  ]);
 
   const facilities = cells.length > 0
     ? await db
@@ -128,11 +154,6 @@ async function getLocationDTO(stationId: string, locationId: string): Promise<Fa
         .from(stationFacilities)
         .where(inArray(stationFacilities.platformLocationCellId, cells.map((c) => c.id)))
     : [];
-
-  const connections = await db
-    .select()
-    .from(facilityConnections)
-    .where(eq(facilityConnections.platformLocationId, locationId));
 
   return {
     id: location.id,

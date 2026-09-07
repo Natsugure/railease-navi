@@ -34,8 +34,11 @@ export type ConnectedStationOption = {
   id: string;
   name: string;
   code: string | null;
-  lineId: string | null;
-  lineName: string | null;
+  // 1駅が複数路線を持ち得るため配列。stationLines に unique(stationId) を付けない
+  // 理由は packages/database/src/schema.ts の stationLines 直前のコメントを参照。
+  // 単数で持つと駅が路線ごとに重複行になり、同じ駅を二重にチェックできてしまう
+  // （facility_connections の unique(platformLocationId, connectedStationId) に抵触する）
+  lines: { id: string; name: string }[];
   platforms: { id: string; platformNumber: string }[];
   directions: { id: string; displayName: string }[];
 };
