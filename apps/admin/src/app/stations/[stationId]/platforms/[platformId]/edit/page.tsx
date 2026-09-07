@@ -16,7 +16,10 @@ export default async function EditPlatformPage({
   return (
     <div>
       <Title order={2} mb="lg">ホームを編集 - {context.stationName}</Title>
+      {/* 同一ルートパターン内で platformId だけが変わる遷移では React が
+          コンポーネントを再利用し、前のホームの入力内容が残る。key で作り直す */}
       <PlatformForm
+        key={`${stationId}:${platformId}`}
         stationId={stationId}
         isEdit
         initialData={context.platform}

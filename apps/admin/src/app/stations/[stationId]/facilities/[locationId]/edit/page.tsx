@@ -16,7 +16,10 @@ export default async function EditLocationPage({
   return (
     <div>
       <Title order={2} mb="lg">設備場所を編集 - {context.stationName}</Title>
+      {/* 同一ルートパターン内で locationId だけが変わる遷移では React が
+          コンポーネントを再利用し、前の場所の入力内容が残る。key で作り直す */}
       <FacilityForm
+        key={`${stationId}:${locationId}`}
         stationId={stationId}
         isEdit
         initialData={context.location}
