@@ -11,9 +11,15 @@
 `external/query/stopPatternPageQuery.ts` + `features/stop-pattern/ports.ts` +
 `di.ts` という完成形のお手本がある。PoC は設けず段階的実装に進む。
 
-唯一の未知は「`PlatformForm` が全路線＋全方面を1ページに載せる形にしたとき、
+唯一の未知は「`PlatformForm` が路線＋方面を1ページに載せる形にしたとき、
 DTO のサイズが実データで問題ないか」。TASK-1.6 で `db:studio` により
-`lines` 62件 / `line_directions` 52件を確認し、問題ないことを見てから進む。
+`lines` 62件 / `line_directions` 52件を確認し、問題ないと判断した。
+
+**この判断は PR #90 のレビューで差し戻した。** 実測し直すと `lines` は **602件**
+（`line_directions` 50件、うち方面を持つ路線は14件）で、62件という前提が既に
+古かった。全路線を返すとホームの新規・編集ページを開くたびに RSC ペイロードへ
+602 路線が載る。`PlatformEditPageQuery` は**当該駅の `stationLines` に載る路線
+だけ**を返す形に変更した（詳細は下記「路線の絞り込み」）。
 
 ## PR 構成
 
@@ -151,11 +157,29 @@ interface PlatformEditPageQuery {
 }
 ```
 
+**路線の絞り込み（PR #90 レビュー対応）**
+
+`lines` は `stationLines` を `innerJoin` して**当該駅に紐づく路線だけ**を返す。
+方面も同じ `stationLines` サブクエリで絞る。ホームは駅に停車する路線に属する
+ものなので、それ以外の路線を選択肢に出す意味がない。実測（渋谷・外苑前・表参道）
+で 602路線/50方面 → 1路線/2方面 に縮む。
+
+既存データの安全性は次で確認済み: `stationLines` を持たない駅 0件、
+自駅の `stationLines` に無い路線を参照する `platforms` 0件。
+副作用として、駅に `stationLines` が1行も無いと路線を選べなくなるため、
+`PlatformForm` は `lines.length === 0` のときに理由を示す注記を出す。
+
 ```ts
 // features/facility/ports.ts に追加 — 接続候補駅にホーム・方面をネスト（US-3、N+1解消）
 type ConnectedStationOption = {
   id: string; name: string; code: string | null;
-  lineId: string | null; lineName: string | null;
+  // 1駅が複数路線を持ち得るので配列（PR #90 レビュー対応）。
+  // 単数で持つと JOIN 結果の「駅×路線」粒度がそのまま漏れ、接続候補リストに
+  // 同じ駅が並ぶ。両方チェックすると facility_connections の
+  // unique(platformLocationId, connectedStationId) に抵触して保存に失敗する。
+  // stationLines に unique(stationId) を付けない理由は
+  // docs/domain/station-master-model.md「stationLines に unique(stationId) を付けない」
+  lines: { id: string; name: string }[];
   platforms: { id: string; platformNumber: string }[];
   directions: { id: string; displayName: string }[];
 };

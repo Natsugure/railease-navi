@@ -194,3 +194,37 @@ Phase 9: ドキュメント更新（docs/domain 確認・#48/#32 起票更新）
       恒久知識（Query Service の DTO 契約など）が `features/*/ports.ts` の
       コメントに残っていることを確認
 - [ ] **TASK-9.6** エグゼクティブサマリーと変更履歴を各 PR 説明に記載
+
+---
+
+## PR #90 レビュー対応
+
+`/code-review` の指摘3件への対応。すべて PR1（Issue #49）で入れたコードが対象。
+
+- [x] **TASK-R.1**（所見1 / Medium）`FacilityForm` の `useState` 遅延初期化が
+      props 変化に追随しない。同一ルートパターン内で動的パラメータだけが変わる遷移
+      （`/facilities/L1/edit` → `/facilities/L2/edit`）で React がコンポーネントを
+      再利用し、前の場所の入力が残る。`useEffect` を戻すのではなく、ページ側で
+      `key` を付けて作り直す（`connectionRows` 以外の state も同時に直るため）。
+      `PlatformForm` も同じ構造なので同様に対応。`cells` の非 lazy な
+      `useState` 初期化も `() =>` に揃えた
+- [x] **TASK-R.2**（所見2 / Low）`getLinesWithDirections` が全路線を返す。
+      TASK-1.6 で根拠にした「`lines` 62件」が古く、実測は 602件。
+      当該駅の `stationLines` に絞る。あわせて `getEditContext` の
+      station → platform → lines の3段直列 await を `Promise.all` に。
+      `PlatformForm` に路線0件時の注記を追加
+- [x] **TASK-R.3**（所見3 / Low）`getConnectedStationOptions` が
+      「駅×路線」粒度の JOIN 行をそのまま返し、複数路線の駅を重複させる。
+      `ConnectedStationOption` の `lineId`/`lineName` を `lines: {id,name}[]` に変え、
+      駅 ID で畳む。`FacilityForm` のラベルは路線名を ` / ` で連結。
+      あわせて `getLocationDTO` の cells/connections を `Promise.all` に
+- [x] **TASK-R.4** `docs/spec/design.md` の DTO 定義と「62件」の前提を更新
+- [x] **TASK-R.5** `docs/domain/` は変更なし。所見3 の根拠
+      「1駅=1路線を仮定したコードを書くな」は既に
+      `station-master-model.md`「`stationLines` に `unique(stationId)` を付けない」に
+      書かれており、今回は実装をその記述に合わせただけ。`docs/adr/` も変更なし
+- [x] **TASK-R.6** 検証: eslint 0 problems / `tsc --noEmit` 0 errors /
+      vitest 266 passed / `next build` 通過。
+      新クエリの生成 SQL を `toSQL()` で確認し、実データで
+      「`stationLines` を持たない駅 0件」「自駅の `stationLines` に無い路線を
+      参照する `platforms` 0件」「重複する接続ペア 0件」を確認済み
