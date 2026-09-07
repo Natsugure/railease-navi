@@ -110,17 +110,26 @@ export function PlatformForm({ stationId, initialData, isEdit = false, lines }: 
           w={{ base: '100%', xs: 128 }}
         />
 
-        <NativeSelect
-          label="路線"
-          data={lineSelectData}
-          value={lineId}
-          onChange={(e) => {
-            setLineId(e.target.value);
-            setInboundDirectionId('');
-            setOutboundDirectionId('');
-          }}
-          required
-        />
+        <div>
+          <NativeSelect
+            label="路線"
+            data={lineSelectData}
+            value={lineId}
+            onChange={(e) => {
+              setLineId(e.target.value);
+              setInboundDirectionId('');
+              setOutboundDirectionId('');
+            }}
+            required
+          />
+          {/* 選択肢はこの駅の stationLines に載る路線だけ。0件だと理由が分からないまま
+              required で詰まるので、原因を示す */}
+          {lines.length === 0 && (
+            <Text size="xs" c="dimmed" mt={4}>
+              この駅に紐づく路線が登録されていません。先に駅と路線の対応を登録してください。
+            </Text>
+          )}
+        </div>
 
         {lineId && (
           <>
