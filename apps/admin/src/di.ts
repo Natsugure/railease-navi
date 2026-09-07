@@ -5,6 +5,11 @@ import { dbStopPatternRepository } from '@/external/repository/stopPatternReposi
 import { dbStopPatternPageQuery } from '@/external/query/stopPatternPageQuery';
 import { dbStationPublishingRepository } from '@/external/repository/stationPublishingRepository';
 import { dbStationPublishingPageQuery } from '@/external/query/stationPublishingPageQuery';
+import { dbTrainEditPageQuery } from '@/external/query/trainEditPageQuery';
+import { dbLineEditPageQuery, dbLineDirectionEditPageQuery } from '@/external/query/lineEditPageQuery';
+import { dbStationEditPageQuery } from '@/external/query/stationEditPageQuery';
+import { dbPlatformEditPageQuery } from '@/external/query/platformEditPageQuery';
+import { dbFacilityEditPageQuery } from '@/external/query/facilityEditPageQuery';
 
 export const platformRepository = dbPlatformRepository;
 export const platformLocationRepository = dbPlatformLocationRepository;
@@ -12,3 +17,11 @@ export const stopPatternRepository = dbStopPatternRepository;
 export const stopPatternPageQuery = dbStopPatternPageQuery;
 export const stationPublishingRepository = dbStationPublishingRepository;
 export const stationPublishingPageQuery = dbStationPublishingPageQuery;
+
+// 編集・新規ページの選択肢データ（#49 でフォームのクライアント側 fetch を廃止）
+export const trainEditPageQuery = dbTrainEditPageQuery;
+export const lineEditPageQuery = dbLineEditPageQuery;
+export const lineDirectionEditPageQuery = dbLineDirectionEditPageQuery;
+export const stationEditPageQuery = dbStationEditPageQuery;
+export const platformEditPageQuery = dbPlatformEditPageQuery;
+export const facilityEditPageQuery = dbFacilityEditPageQuery;

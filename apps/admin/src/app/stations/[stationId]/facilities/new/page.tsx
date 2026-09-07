@@ -1,9 +1,7 @@
 import { notFound } from 'next/navigation';
-import { db } from '@furatora/database/client';
-import { stations } from '@furatora/database/schema';
-import { eq } from 'drizzle-orm';
 import { Title } from '@mantine/core';
 import { FacilityForm } from '@/features/facility/components/FacilityForm';
+import { facilityEditPageQuery } from '@/di';
 
 export default async function NewFacilityPage({
   params,
@@ -11,14 +9,22 @@ export default async function NewFacilityPage({
   params: Promise<{ stationId: string }>;
 }) {
   const { stationId } = await params;
-  const [station] = await db.select().from(stations).where(eq(stations.id, stationId));
+  const context = await facilityEditPageQuery.getCreateContext(stationId);
 
-  if (!station) notFound();
+  if (!context) notFound();
 
   return (
     <div>
-      <Title order={2} mb="lg">新規設備場所 - {station.name}</Title>
-      <FacilityForm stationId={stationId} />
+      <Title order={2} mb="lg">新規設備場所 - {context.stationName}</Title>
+      {/* 同一ルートパターン内で stationId だけが変わる遷移では React が
+          コンポーネントを再利用し、前の駅の入力内容が残る。key で作り直す */}
+      <FacilityForm
+        key={stationId}
+        stationId={stationId}
+        platforms={context.platforms}
+        facilityTypes={context.facilityTypes}
+        connectedStations={context.connectedStations}
+      />
     </div>
   );
 }

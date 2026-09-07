@@ -1,13 +1,9 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Button, Group, NativeSelect, NumberInput, Stack, TextInput } from '@mantine/core';
-
-type Operator = {
-  id: string;
-  name: string;
-};
+import type { OperatorOption } from '@/features/line/ports';
 
 type Props = {
   lineId: string;
@@ -22,9 +18,10 @@ type Props = {
     displayOrder: number;
     operatorId: string;
   };
+  operators: OperatorOption[];
 };
 
-export function LineForm({ lineId, initialData }: Props) {
+export function LineForm({ lineId, initialData, operators }: Props) {
   const router = useRouter();
   const [name, setName] = useState(initialData.name);
   const [nameKana, setNameKana] = useState(initialData.nameKana ?? '');
@@ -35,14 +32,7 @@ export function LineForm({ lineId, initialData }: Props) {
   const [color, setColor] = useState(initialData.color ?? '');
   const [displayOrder, setDisplayOrder] = useState<number | string>(initialData.displayOrder);
   const [operatorId, setOperatorId] = useState(initialData.operatorId);
-  const [operators, setOperators] = useState<Operator[]>([]);
   const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    fetch('/api/operators')
-      .then((r) => r.json())
-      .then(setOperators);
-  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();

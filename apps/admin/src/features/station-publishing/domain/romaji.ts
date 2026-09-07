@@ -28,7 +28,7 @@ const JR_PREFIX = 'ジェイアール';
 /** 促音（ッ）の直後の子音を重ねる際、`ch` の前だけ `t` にする（クッチャン→kutchan） */
 function doubledConsonant(nextRomaji: string): string {
   if (nextRomaji.startsWith('ch')) return 't';
-  const first = nextRomaji[0];
+  const first = nextRomaji[0] ?? '';
   return /[bcdfghjklmnpqrstvwxyz]/.test(first) ? first : '';
 }
 
@@ -119,11 +119,17 @@ export function hepburn(kana: string): string {
   let result = '';
   let i = 0;
   while (i < kana.length) {
+    // while 条件で i < kana.length を保証済みだが noUncheckedIndexedAccess 下では
+    // string | undefined になる。末尾を越えたら終了する
     const ch = kana[i];
+    if (ch === undefined) break;
 
     if (ch === SOKUON) {
-      // 次のモーラ（拗音なら2文字）を読み、その先頭子音を重ねる
-      const nextMora = SMALL_KANA.has(kana[i + 2]) ? kana.slice(i + 1, i + 3) : kana[i + 1];
+      // 次のモーラ（拗音なら2文字）を読み、その先頭子音を重ねる。
+      // 末尾の促音（次のモーラが無い）は nextMora が '' になり、無音として捨てられる
+      const nextMora = SMALL_KANA.has(kana[i + 2] ?? '')
+        ? kana.slice(i + 1, i + 3)
+        : (kana[i + 1] ?? '');
       const nextRomaji = YOUON[nextMora] ?? GOJUON[nextMora];
       if (nextRomaji) {
         result += doubledConsonant(nextRomaji);

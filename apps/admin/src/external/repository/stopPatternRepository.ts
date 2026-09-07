@@ -3,6 +3,7 @@ import { withTransaction, type Tx } from '@furatora/database/tx';
 import { trainStopPatterns, trainStopPatternCars, platforms } from '@furatora/database/schema';
 import { and, eq, exists, sql } from 'drizzle-orm';
 import { DuplicateStopPatternError, type StopPatternRepository } from '@/features/stop-pattern/ports';
+import { requireInserted } from '@/external/requireInserted';
 
 // PostgreSQL の一意制約違反（unique_violation）のエラーコード。
 // https://www.postgresql.org/docs/current/errcodes-appendix.html
@@ -48,10 +49,12 @@ export const dbStopPatternRepository: StopPatternRepository = {
       return await withTransaction(async (tx) => {
         if (!(await isPlatformOfStation(tx, pattern.platformId, stationId))) return false;
 
-        const [row] = await tx
-          .insert(trainStopPatterns)
-          .values({ platformId: pattern.platformId, trainId: pattern.trainId })
-          .returning();
+        const row = requireInserted(
+          await tx
+            .insert(trainStopPatterns)
+            .values({ platformId: pattern.platformId, trainId: pattern.trainId })
+            .returning()
+        );
         await tx.insert(trainStopPatternCars).values(
           pattern.cars.map((c) => ({
             trainStopPatternId: row.id,

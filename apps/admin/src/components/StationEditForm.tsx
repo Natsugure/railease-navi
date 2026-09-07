@@ -1,27 +1,15 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import type { StrollerDifficulty, WheelchairDifficulty } from '@furatora/database/enums';
 import { STROLLER_DIFFICULTY_META, WHEELCHAIR_DIFFICULTY_META } from '@/constants/difficulty';
+import type { ConnectionRow, OperatorOption } from '@/features/station/ports';
 import {
   Button, Card, Group, NativeSelect, SimpleGrid, Stack, Text, TextInput, Textarea, Title,
 } from '@mantine/core';
 
-type Operator = {
-  id: string;
-  name: string;
-};
-
-export type ConnectionRow = {
-  id: string;
-  connectedStationName: string | null;
-  connectedLineName: string | null;
-  strollerDifficulty: StrollerDifficulty | null;
-  wheelchairDifficulty: WheelchairDifficulty | null;
-  notesAboutStroller: string | null;
-  notesAboutWheelchair: string | null;
-};
+export type { ConnectionRow } from '@/features/station/ports';
 
 type ConnectionState = {
   strollerDifficulty: StrollerDifficulty | '';
@@ -29,6 +17,11 @@ type ConnectionState = {
   notesAboutStroller: string;
   notesAboutWheelchair: string;
 };
+
+// 接続 ID を持つ行の配列で保持する。Record にすると noUncheckedIndexedAccess 下で
+// キーアクセスが T | undefined になるが、行は connections から1対1で導出されるため
+// 配列 + find の方が「必ず存在する」ことを表現しやすい（Issue #50）。
+type ConnectionStateRow = ConnectionState & { id: string };
 
 type Props = {
   stationId: string;
@@ -45,6 +38,7 @@ type Props = {
     notes: string | null;
   };
   connections: ConnectionRow[];
+  operators: OperatorOption[];
 };
 
 function displayName(conn: ConnectionRow): string {
@@ -70,7 +64,7 @@ const wheelchairOptions = [
     .map(([key, { label }]) => ({ value: key, label })),
 ];
 
-export function StationEditForm({ stationId, initialData, connections }: Props) {
+export function StationEditForm({ stationId, initialData, connections, operators }: Props) {
   const router = useRouter();
   const [name, setName] = useState(initialData.name);
   const [nameKana, setNameKana] = useState(initialData.nameKana ?? '');
@@ -82,30 +76,19 @@ export function StationEditForm({ stationId, initialData, connections }: Props) 
   const [lon, setLon] = useState(initialData.lon ?? '');
   const [operatorId, setOperatorId] = useState(initialData.operatorId);
   const [notes, setNotes] = useState(initialData.notes ?? '');
-  const [operators, setOperators] = useState<Operator[]>([]);
-  const [connectionStates, setConnectionStates] = useState<Record<string, ConnectionState>>(() =>
-    Object.fromEntries(
-      connections.map((c) => [
-        c.id,
-        {
-          strollerDifficulty: c.strollerDifficulty ?? '',
-          wheelchairDifficulty: c.wheelchairDifficulty ?? '',
-          notesAboutStroller: c.notesAboutStroller ?? '',
-          notesAboutWheelchair: c.notesAboutWheelchair ?? '',
-        },
-      ])
-    )
+  const [connectionStates, setConnectionStates] = useState<ConnectionStateRow[]>(() =>
+    connections.map((c) => ({
+      id: c.id,
+      strollerDifficulty: c.strollerDifficulty ?? '',
+      wheelchairDifficulty: c.wheelchairDifficulty ?? '',
+      notesAboutStroller: c.notesAboutStroller ?? '',
+      notesAboutWheelchair: c.notesAboutWheelchair ?? '',
+    }))
   );
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    fetch('/api/operators')
-      .then((r) => r.json())
-      .then(setOperators);
-  }, []);
-
   function updateConnection(id: string, patch: Partial<ConnectionState>) {
-    setConnectionStates((prev) => ({ ...prev, [id]: { ...prev[id], ...patch } }));
+    setConnectionStates((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
   }
 
   async function handleSave() {
@@ -128,9 +111,8 @@ export function StationEditForm({ stationId, initialData, connections }: Props) 
       }),
     });
 
-    const connectionReqs = connections.map((conn) => {
-      const s = connectionStates[conn.id];
-      return fetch(`/api/station-connections/${conn.id}`, {
+    const connectionReqs = connectionStates.map((s) =>
+      fetch(`/api/station-connections/${s.id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -139,8 +121,8 @@ export function StationEditForm({ stationId, initialData, connections }: Props) 
           notesAboutStroller: s.notesAboutStroller || null,
           notesAboutWheelchair: s.notesAboutWheelchair || null,
         }),
-      });
-    });
+      })
+    );
 
     const results = await Promise.all([stationReq, ...connectionReqs]);
     const allOk = results.every((r) => r.ok);
@@ -239,7 +221,8 @@ export function StationEditForm({ stationId, initialData, connections }: Props) 
         ) : (
           <Stack gap="lg">
             {connections.map((conn) => {
-              const s = connectionStates[conn.id];
+              const s = connectionStates.find((cs) => cs.id === conn.id);
+              if (!s) return null;
               return (
                 <Card key={conn.id} withBorder padding="md">
                   <Text fw={500} size="sm" mb="md">{displayName(conn)}</Text>

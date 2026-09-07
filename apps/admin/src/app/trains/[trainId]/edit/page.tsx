@@ -1,9 +1,7 @@
 import { notFound } from 'next/navigation';
-import { db } from '@furatora/database/client';
-import { trains, trainEquipments, trainCarStructures } from '@furatora/database/schema';
-import { eq } from 'drizzle-orm';
 import { Title } from '@mantine/core';
 import { TrainForm } from '@/features/train/components/TrainForm';
+import { trainEditPageQuery } from '@/di';
 
 export default async function EditTrainPage({
   params,
@@ -11,40 +9,18 @@ export default async function EditTrainPage({
   params: Promise<{ trainId: string }>;
 }) {
   const { trainId } = await params;
-  const [train] = await db.select().from(trains).where(eq(trains.id, trainId));
+  const context = await trainEditPageQuery.getEditContext(trainId);
 
-  if (!train) notFound();
-
-  const [equipments, carStructureRows] = await Promise.all([
-    db.select().from(trainEquipments).where(eq(trainEquipments.trainId, trainId)),
-    db.select().from(trainCarStructures).where(eq(trainCarStructures.trainId, trainId)),
-  ]);
+  if (!context?.train) notFound();
 
   return (
     <div>
       <Title order={2} mb="lg">列車を編集</Title>
       <TrainForm
         isEdit
-        initialData={{
-          id: train.id,
-          name: train.name,
-          operatorId: train.operators,
-          lineIds: train.lines,
-          carCount: train.carCount,
-          carStructure: carStructureRows.length > 0
-            ? carStructureRows.map((cs) => ({
-                carNumber: cs.carNumber,
-                doorCount: cs.doorCount,
-                carLength: cs.carLength != null ? Number(cs.carLength) : null,
-              }))
-            : null,
-          freeSpaces: equipments
-            .filter((e) => e.type === 'free_space')
-            .map((e) => ({ carNumber: e.carNumber, nearDoor: e.nearDoor, isStandard: e.isStandard })),
-          prioritySeats: equipments
-            .filter((e) => e.type === 'priority_seat')
-            .map((e) => ({ carNumber: e.carNumber, nearDoor: e.nearDoor, isStandard: e.isStandard })),
-        }}
+        initialData={context.train}
+        operators={context.operators}
+        lines={context.lines}
       />
     </div>
   );

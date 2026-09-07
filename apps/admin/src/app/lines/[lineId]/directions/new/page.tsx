@@ -1,9 +1,7 @@
 import { notFound } from 'next/navigation';
-import { db } from '@furatora/database/client';
-import { lines } from '@furatora/database/schema';
-import { eq } from 'drizzle-orm';
 import { Title } from '@mantine/core';
 import { LineDirectionForm } from '@/components/LineDirectionForm';
+import { lineDirectionEditPageQuery } from '@/di';
 
 export default async function NewDirectionPage({
   params,
@@ -11,14 +9,14 @@ export default async function NewDirectionPage({
   params: Promise<{ lineId: string }>;
 }) {
   const { lineId } = await params;
-  const [line] = await db.select().from(lines).where(eq(lines.id, lineId));
+  const context = await lineDirectionEditPageQuery.getCreateContext(lineId);
 
-  if (!line) notFound();
+  if (!context) notFound();
 
   return (
     <div>
-      <Title order={2} mb="lg">新規方面 - {line.name}</Title>
-      <LineDirectionForm lineId={lineId} />
+      <Title order={2} mb="lg">新規方面 - {context.lineName}</Title>
+      <LineDirectionForm lineId={lineId} stations={context.stations} />
     </div>
   );
 }

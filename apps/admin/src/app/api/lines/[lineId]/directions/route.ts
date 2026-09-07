@@ -1,25 +1,7 @@
 import { NextResponse } from 'next/server';
 import { db } from '@furatora/database/client';
 import { lineDirections } from '@furatora/database/schema';
-import { eq, asc } from 'drizzle-orm';
 import { directionSchema } from '@/lib/validations';
-
-export async function GET(
-  _request: Request,
-  { params }: { params: Promise<{ lineId: string }> }
-) {
-  try {
-    const { lineId } = await params;
-    const result = await db
-      .select()
-      .from(lineDirections)
-      .where(eq(lineDirections.lineId, lineId))
-      .orderBy(asc(lineDirections.directionType));
-    return NextResponse.json(result);
-  } catch {
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
-  }
-}
 
 export async function POST(
   request: Request,

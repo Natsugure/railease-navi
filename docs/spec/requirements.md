@@ -1,204 +1,171 @@
-# 要件: 駅・路線マスタの ekidata 移行 (Issue #56 / ADR-0007)
+# 要件: admin フォームの props 化と型ルール有効化 (Issue #49 / #50)
 
 ## 概要
 
-- **対象**: `packages/database`, `apps/admin`, `apps/scripts`, `apps/web`
-- **参照**: [ADR-0007](../adr/0007-station-master-data-source.md) / [design.md](./design.md) / [tasks.md](./tasks.md)
-- **作成日**: 2026-08-28
-- **ブランチ**: `docs/station-database-transition`
-- **信頼度**: 88%（高）— 移行対象の実測が完了し、突合の解決率まで確認済み
+- **対象**: `apps/admin`, `apps/web`, `packages/eslint-config`, `packages/typescript-config`, リポジトリルート
+- **参照**: [design.md](./design.md) / [tasks.md](./tasks.md) /
+  [ADR-0001](../adr/0001-layer-structure.md) / [ADR-0003](../adr/0003-read-write-separation.md)
+- **作成日**: 2026-09-06
+- **ブランチ**: `feature/issue49-50-form-props-and-strict-index`
+- **信頼度**: 90%（高）— 違反箇所と件数を実測で確定済み。Query Service の追加は既存の
+  `stopPatternPageQuery` / `stationPublishingPageQuery` にお手本がある
 
-駅・路線マスタの同期元を ODPT から 駅データ.jp（ekidata）会員版CSV へ移行する。
-ODPT ID は動的データへの参照キーとして保持する（ADR-0007 決定3）。
+2つの lint / 型ルールが「違反が残っているため無効化されたまま」になっている。
+違反を構造的に解消し、ルールを `error` / `true` で常時有効にする。
+あわせて型チェックを CI で実行する仕組みを整える。
 
-## 現状の実測値（2026-08-28 時点の本番DB）
+## 現状の実測値（2026-09-06 時点）
 
 設計判断の前提。数値が変わった場合は本節から再評価する。
 
-| テーブル | 件数 | 備考 |
+| 項目 | 実測 | Issue 本文の記述 |
 |---|---|---|
-| `operators` | 17 | メトロ・都営 + 未解決接続由来15件。**全件に `odptOperatorId` あり** |
-| `lines` | 62 | メトロ10 + 都営6 + 未解決由来46 |
-| `stations` | 481 | メトロ186 + 都営149 + 未解決由来146 |
-| `station_lines` | 481 | 複数路線を持つ駅は0件。**ただし不変条件ではないため制約は付けない**（[design.md](./design.md)） |
-| `station_connections` | 546 | 未解決行0 / **難易度入力済み0件** |
-| `platforms` | 14 | 7駅 |
-| `line_directions` | 52 | |
-| `trains` | 10 | |
-| `platform_locations` / `station_facilities` / `train_stop_patterns` / `facility_connections` | **すべて0** | |
+| `no-floating-promises` 違反 | **9件 / 6ファイル**（`pnpm exec eslint .`） | 11件 |
+| `noUncheckedIndexedAccess` 有効時の型エラー（フラグ起因） | **admin 31件 / web 46件 = 計77件** | admin 39 / web 51 + 既存9 |
+| フラグ無しの型エラー（ベースライン） | **全ワークスペース0件** | apps/web に既存9件 |
+| `apps/admin/eslint.config.mjs` の `legacyExclusions` | 39ファイル | — |
 
-**未解決接続由来の146駅は `lat`/`lon` を持たない。** 生成元の
-`POST /api/unresolved-connections/stations` が座標を設定しないため。
-座標近傍による突合はこの146件に対して使えない。
+### Issue 本文との差分（重要）
 
-## ekidata 会員版CSV の前提
+Issue #49 / #50 は執筆後にコードが動いたため、本文の記述が古い。
 
-**2026-08 配布分（company20260409 / line20260618 / station20260731 / join20260618）の実測。**
-初版に記載していた数値は無料版CSV由来であり、会員版とは一致しなかった。
-差が出るのは新幹線160駅の有無である（下記 C-1）。
+- `src/app/unresolved-connections/page.tsx` は**コミット `4fe1419` で削除済み**。
+  #49 が「唯一 restructure が必要」とした最難関は消滅し、残る9件はすべて props 化で解消する。
+- `FacilityForm` / `PlatformForm` / `TrainForm` は
+  `src/features/{facility,platform,train}/components/` へ移動済み。
+- #50 が「スコープ外」とした既存9件（`platformCarStopPositions` / `CarStopPosition` /
+  `maxCarCount`）は**すでに解消済み**。→ 該当チェックボックスは対応不要。
+- `LineDirectionForm.tsx` の `react-hooks/set-state-in-effect` は現在発火していない
+  （`loadedLineId` を使う書き方が該当ルールに当たっていない）。props 化で
+  `useEffect` ごと消えるため、いずれにせよ解消される。
 
-| ファイル | 全行 | 現役（`e_status = 0`） | 一意キー |
-|---|---|---|---|
-| `company` | 175 | **162** | `company_cd` |
-| `line` | 624 | **602** | `line_cd` |
-| `station` | 11,127 | **10,625** | `station_cd`（路線×駅粒度） |
-| `join` | 10,189 | — | `(line_cd, station_cd1, station_cd2)` |
+### `no-floating-promises` 違反の内訳
 
-- `e_status` は **0 = 現役 / 1 = 未開業 / 2 = 廃止** の3値である。
-  取り込むのは 0 のみ。1（路線1件・駅5件）は取り込まず、廃止扱いにもしない
-- `station_g_cd` は**乗換駅グループ**を表す。現役駅で **8,782グループ**、
-  複数駅を含むグループ **1,156件**、有向ペア **6,946件**
-- `station_cd` の上位桁は `line_cd` と一致しない（137件の例外）。`line_cd` 列を使うこと
-- `station_g_cd` に **59件**のダングリング参照がある
-  （9件はどの `station_cd` にも存在せず、50件は廃止駅を指す）
-- `join` の 10,189行のうち **149行は取り込めない**。142行は `line_cd` が現役路線でなく、
-  7行は端点が現役駅でない。FK を張れないため、投入対象は **10,040行**
-- 日付列（`open_ymd` / `close_ymd`）の未設定値は `0000-00-00` である。date 列に入れられない
-- `line_color_c` は `#` の無い6桁16進である（現役602件のうち1件が空）
-- **引用符は1件も無く、全行の列数がヘッダと一致する。** 住所列（列名は `address`）にも
-  カンマは含まれない。CSVパーサに引用符処理は要らない
+すべて `useEffect` 内でマスタデータを fetch し直しているもの。`.catch` が1つも無い。
 
----
+| ファイル | 行 | 取得しているデータ |
+|---|---|---|
+| `src/components/LineForm.tsx` | 42 | `GET /api/operators` |
+| `src/components/StationEditForm.tsx` | 102 | `GET /api/operators` |
+| `src/components/LineDirectionForm.tsx` | 55 | `GET /api/stations?lineId=` |
+| `src/features/train/components/TrainForm.tsx` | 58 | `GET /api/operators` + `GET /api/lines` |
+| `src/features/platform/components/PlatformForm.tsx` | 56, 66, 69 | `GET /api/lines` / `GET /api/lines/{id}/directions` |
+| `src/features/facility/components/FacilityForm.tsx` | 112, 127 | ホーム・設備タイプ・接続候補駅 + 接続候補駅ごとのホーム/方面（N+1） |
 
-## ユーザーストーリーと受け入れ基準（EARS記法）
+### 現状の実害（Issue #49 本文より、実コードで確認済み）
 
-### US-1: 管理者として、ekidata CSV をアップロードしてマスタを更新したい
+- **失敗時にスピナー永久固着**: `setDataLoading(false)` が成功パスにしかない
+  （`FacilityForm` / `TrainForm`）
+- **無言で壊れる**: ローディング表示すら無くセレクトが空のまま（`LineForm` / `StationEditForm`）
+- **レースコンディション**: `lineId` 変更時に古いレスポンスが後着で勝つ
+  （`PlatformForm:69` / `LineDirectionForm:55`。`AbortController` なし）
+- **N+1 リクエスト**: `FacilityForm:127` は接続候補駅ごとに2本 fetch を投げ、
+  内側 `Promise.all` が外側の `.then` から切り離されており失敗が完全に消える
+- **ルール回避ハック**: `PlatformForm:66` の `Promise.resolve().then(() => setDirections([]))`
 
-- **REQ-1.1**: 管理者が4種のCSV（company / line / station / join）をアップロードしたとき、
-  システムはそれらを解析し、適用前に差分計画を提示すること
-- **REQ-1.2**: 差分計画を提示する際、システムは新規件数・更新件数・廃止件数・
-  突合失敗件数をテーブルごとに表示すること
-- **REQ-1.3**: 管理者が差分計画を承認したとき、システムは変更をトランザクション内で適用すること
-- **REQ-1.4**: CSVの必須列が欠落している場合、システムは適用せずに
-  どのファイルのどの列が欠けているかを報告すること
-- **REQ-1.5**: 同一のCSVを再度アップロードしたとき、システムは
-  差分0件として報告し、データを変更しないこと（冪等性）
-- **REQ-1.6**: `station` CSV が 1.4MB を超える場合でも、システムは
-  アップロードを受け付けること
+## ユーザーストーリーと受け入れ基準（EARS 記法）
 
-### US-2: 管理者として、インポートで手入力データを失いたくない
+### US-1: フォームの選択肢を即時表示する
 
-- **REQ-2.1**: インポートを実行するとき、システムは furatora 固有の列
-  （`slug` / `nameEn` / `code` / `notes` / `publishedAt` /
-  `displayOrder` / `displayPriority` / `lineCode`）を変更しないこと
-- **REQ-2.2**: CSV の値が空文字または NULL である場合、システムは
-  既存の値を保持すること（空値での上書きを行わない）
-- **REQ-2.3**: インポートを実行するとき、システムは既存の
-  `platforms` / `lineDirections` / `trains` および設備系テーブルの行を削除しないこと
+**管理者が編集・新規ページを開いたとき、システムは選択肢（事業者・路線・駅・方面・ホーム）を
+最初の描画時点で埋めて表示すること。**
 
-### US-3: 開発者として、既存の ODPT 由来データを ekidata に突合したい
+- 受け入れ基準:
+  - LineForm / StationEditForm / TrainForm の事業者・路線セレクトが、
+    描画直後に選択肢を持つ（従来の「一瞬空」「スピナー」が無い）
+  - フォームのどのコンポーネントにも、選択肢取得のための `useEffect` が無い
+  - 選択肢はすべて親の Server Component から props で渡る
 
-- **REQ-3.1**: 突合が実行されたとき、システムは
-  `operators` / `lines` / `stations` の各行に `ekidata*Cd` を設定すること
-- **REQ-3.2**: 突合できない行が存在する場合、システムは
-  当該行を削除せず `ekidata*Cd` を NULL のまま残し、一覧として報告すること
-- **REQ-3.3**: 駅名を突合する際、システムは括弧とその内容を除去し、
-  `ヶ`/`ケ` の揺れを吸収した上で比較すること
-- **REQ-3.4**: 移行を実行するとき、システムは `stations.id` / `lines.id` を変更しないこと
-  （`platforms` / `lineDirections` 等の参照を維持するため）
-- **REQ-3.5**: 複数の既存行が同じ ekidata コードに突合した場合、システムは
-  適用を実行せず、その組を報告すること（`ekidata*Cd` は一意制約付きであるため）
+### US-2: 路線切り替え時に方面が即座に追従する
 
-### US-4: 管理者として、乗換接続を管理したい
+**PlatformForm で管理者が路線を切り替えたとき、システムは追加の fetch なしに
+その路線の上り／下り方面を表示すること。**
 
-- **REQ-4.1**: インポートを実行するとき、システムは同一 `station_g_cd` に属する
-  現役駅の全順序対を乗換接続として生成すること
-- **REQ-4.2**: 管理者が乗換接続を手動で追加したとき、システムは
-  その行を `source = 'manual'` として記録すること
-- **REQ-4.3**: インポートを再実行するとき、システムは
-  `source = 'manual'` の行を削除・変更しないこと
-- **REQ-4.4**: 既に難易度が入力されている接続に対してインポートが行われたとき、
-  システムは難易度およびメモを保持すること
+- 受け入れ基準:
+  - `inboundDirections` / `outboundDirections` が props から引いた純粋な派生値である
+  - `Promise.resolve().then(...)` によるルール回避が無い
+  - 路線を素早く切り替えても、古い方面リストが後着で勝つことがない
 
-### US-5: 開発者として、路線概念の分類を確定させたい
+### US-3: 接続候補駅の情報を単一クエリ群でまとめて取得する
 
-当初は運行系統のスキーマ（`serviceRoutes`）を今回新設する予定だったが、
-**取りやめた。** 1つの概念に見えていたものが3種類に割れ、
-うち2種類は別の概念だったためである（[design.md](./design.md) 参照）。
-今回はデータを1件も投入しないため、未分化のままスキーマに固定しない。
+**FacilityForm を開いたとき、システムは接続候補駅とそのホーム・方面を、
+駅ごとの個別リクエストなしにまとめて取得すること。**
 
-- **REQ-5.1**: 路線概念を分類するとき、システムの設計は
-  「案内路線（表示単位）」と「運行系統（列車の走り方）」を別概念として扱うこと
-- **REQ-5.2**: ekidata `line_cd` を扱うとき、システムは
-  それが線路名称・案内名・運行系統・列車名・直通運転を混在させている前提で扱うこと
+- 受け入れ基準:
+  - 接続候補駅の DTO に、その駅のホーム一覧・方面一覧がネストされている
+  - フォーム表示時にブラウザから `/api/` への GET が1本も飛ばない
+  - `connectionRows` の初期値が props から `useState` の遅延初期化で組み立てられる
 
-### US-6: 利用者として、全国の駅を検索したい
+### US-4: 望ましくない挙動が構造ごと消える
 
-- **REQ-6.1**: 利用者が駅名を漢字またはカナで入力したとき、
-  システムは部分一致する駅を返すこと
+**選択肢取得の `useEffect` が削除された場合、システムはスピナー固着・無言の失敗・
+レース・N+1・ルール回避ハックのいずれも起こさないこと。**
 
-> **REQ-6.2 は削除した。** 「slug 未設定なら `id` で誘導する」を定めていたが、
-> `publishedAt` に CHECK 制約（公開駅は slug 必須）を課すため、
-> この状況は発生しなくなる。未公開駅は誘導対象でもない。
-> 現行の `station.slug ?? station.id`（`StationCard.tsx:15` /
-> `StationSearch.tsx:112`）はデッドコードとして整理する。
+- 受け入れ基準:
+  - `dataLoading` / `linesLoading` / `loadedLineId` などの取得用ローディング状態が
+    フォームから消えている
+  - `pnpm exec eslint .`（apps/admin）が 0 problems
 
-### US-7: 運営者として、未公開の駅・路線を利用者に見せたくない
+### US-5: 未使用になった API GET を撤去する
 
-**現行バージョンのバグ。** `operators.displayPriority` が NULL（非表示）の
-事業者に属する駅・路線が、URLを直接指定すると表示できる。実証済み:
-`/lines/yurikamome-yurikamome/stations` および
-`/stations/yurikamome-yurikamome-shiodome`。
-可視性の判定が一覧の取得箇所にしか無く、詳細・API に無いことが原因である
-（[design.md](./design.md) 参照）。`publishedAt` への移行と同時に塞ぐ。
+**props 化で admin 内から呼び出し元が無くなった GET ハンドラがある場合、
+システムはそのコードを残さないこと。**
 
-- **REQ-7.1**: 利用者が未公開（`publishedAt` が NULL）の駅の詳細ページへ
-  アクセスしたとき、システムは 404 を返すこと
-- **REQ-7.2**: 利用者が、公開されている駅を1件も持たない路線のページへ
-  アクセスしたとき、システムは 404 を返すこと
-- **REQ-7.3**: 公開APIが駅・路線・事業者を返すとき、システムは未公開の駅、
-  および公開駅を1件も持たない路線・事業者を応答に含めないこと
-- **REQ-7.4**: 駅詳細が乗換接続を返すとき、システムは
-  未公開の駅への接続を含めないこと
-- **REQ-7.5**: 可視性の判定を行うとき、システムは単一の関数を通して行うこと
-  （読み取り経路ごとに条件を書かない）
+- 受け入れ基準:
+  - `api/facility-types` / `api/lines`（GET） / `api/stations`（GET） /
+    `api/stations/[stationId]/directions` の各ルートファイルが削除されている
+  - `api/operators` / `api/lines/[lineId]/directions` /
+    `api/stations/[stationId]/platforms` から GET だけが削除され、POST は残る
+  - 既にデッドコードの `api/platforms/route.ts` も削除されている
+  - `api/operators/route.test.ts` の `GET` 記述ブロックが削除され、POST のテストは残る
 
-### 望ましくない動作
+### US-6: `no-floating-promises` を error に戻す
 
-- **REQ-8.1**: インポートの適用中にエラーが発生した場合、システムは
-  変更を一切適用せず、エラー内容を報告すること
-- **REQ-8.2**: `station_g_cd` が存在しない `station_cd` を指している場合、
-  システムは当該グループを破棄せず、所属駅から代表値を決定すること
-- **REQ-8.3**: ekidata で `e_status = 2`（廃止）となった駅・路線が
-  既にDBに存在する場合、システムは行を削除せず廃止日を記録すること
+**#49 の props 化が完了したとき、システムは
+`@typescript-eslint/no-floating-promises` を `error` で適用すること。**
 
----
+- 受け入れ基準:
+  - `packages/eslint-config/next-app.mjs` の当該ルールが `"error"`
+  - Issue #49 を指す暫定コメントが削除されている
+  - `legacyExclusions` から、削除した route と Query Service 化した親ページの行が消えている
+
+### US-7: `noUncheckedIndexedAccess` を有効化する
+
+**`packages/typescript-config/base.json` にフラグが追加されたとき、システムは
+`tsc --noEmit` を全ワークスペースでエラーなく通すこと。**
+
+- 受け入れ基準:
+  - `base.json` に `"noUncheckedIndexedAccess": true` がある
+  - `pnpm run typecheck` が全ワークスペースで 0 errors
+  - 対処は箇所ごとに実態に即して判断する（存在チェック / 安全と言える根拠のある
+    非 null アサーション / ロジック見直し）。機械的な一律変換をしない
+  - テストコード（`*.test.ts`）に限り `!` を許容する（本番コードの安全性に影響しないため）
+
+### US-8: 型チェックを継続的に実行する
+
+**PR が作成されたとき、システムは CI で lint・typecheck・test を実行すること。**
+
+- 受け入れ基準:
+  - `apps/*` / `packages/database` に `typecheck` スクリプトがある
+  - ルート `package.json` に `typecheck`、`turbo.json` に `typecheck` タスクがある
+  - `.github/workflows/` に、`pull_request` で lint → typecheck → test を回す
+    ワークフローがある（DB 接続不要。route handler のテストは `db` をモック済み）
 
 ## 制約
 
-### C-1: 新幹線の駅は会員版CSVに含まれる（2026-08-31 確認済み・解消）
-
-無料版には12路線すべてで駅データが存在しない。**会員版には存在する。**
-会員版と無料版の現役駅数の差 160件がそれであり、
-東海道新幹線（`line_cd = 1002`）の東京 `100201` / 品川 / 新横浜 … が含まれる。
-
-したがって現行DBの新幹線11駅は Phase 3 の突合で解決できる。
-本制約は解消した（TASK-3.4 の確認対象も同様）。
-
-### C-2: 駅ナンバリングは ekidata が供給しない
-
-現行DBの146件は ODPT 由来の手入力であり、突合により保持される。
-全国展開分の駅ナンバリングは欠落したまま運用する（ADR-0007「影響」）。
-
-### C-3: `ekidataStationCd` は当面 nullable
-
-突合できない行（新幹線11駅ほか）が残るため、notNull 化は
-未突合ゼロを確認した後の別マイグレーションとする。
-
-### C-4: ekidata データの非加工での第三者提供は無償に限られる
-
-利用規約 第6条。公開API `/api/v1/*` の設計に将来影響しうる（[design.md](./design.md) 参照）。
-
----
+- `develop` / `main` での直接作業は禁止（CLAUDE.md）。ブランチを切ってから着手する
+- ADR-0001 の依存ルール: `src/app/**` と `src/features/*/components/**` から
+  `@furatora/database` / `drizzle-orm` を import できない。読み取りは `external/query/` へ置く
+- ADR-0003: 読み取りは Query Service（画面・ユースケース単位、DTO を返す、JOIN 自由）。
+  汎用 CRUD Repository（`findAll` / `findById`）は禁止
+- `packages/database` は web / scripts と共有のため、admin 都合のヘルパーは admin ローカルに置く
+- API の POST / PUT ハンドラの挙動は変えない（props 化は読み取り経路のみ）
 
 ## スコープ外
 
-以下は本Issueで扱わない。
-
-| 項目 | 理由 | 行き先 |
-|---|---|---|
-| 経路探索の方式・ベンダ選定 | ADR-0007 決定2 で保留 | Issue #56 |
-| 運行系統の**データ投入**とAdmin管理UI | 今回はスキーマのみ | 後続Issue |
-| 列単位の上書きロック（`lockedFields`） | 列の分離と空値保護で当面足りる | 後続Issue |
-| `facilityConnections` の粒度見直し | 現在0件であり、実データが出てから設計する | 後続Issue |
-| `operators.displayPriority` の全国運用ルール | 表示制御の方針が未定 | 後続Issue |
+- `apps/admin/src/app/stations/page.tsx` の N+1 解消（#48 に残す）
+- `api/stations/[stationId]/platform-locations` / `train-stop-patterns` /
+  `api/trains` 系 GET の Query Service 化（#48 に残す）
+- ADR-0001 / ADR-0003 のステータス変更（#29 の完了判断に属する）
+- `features/` に `usecases/` 層を新設すること（現状どの feature にも無く、
+  page → query の直呼びが実質標準。本Issueもそれに倣う）
