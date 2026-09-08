@@ -7,7 +7,8 @@ import { useDisclosure } from '@mantine/hooks';
 
 type Props = {
   endpoint: string;
-  redirectTo: string;
+  // 省略時は削除後にページ遷移せず router.refresh() のみ（一覧内の行削除向け）。
+  redirectTo?: string;
   label?: string;
 };
 
@@ -21,7 +22,9 @@ export function DeleteButton({ endpoint, redirectTo, label = '削除' }: Props) 
     const res = await fetch(endpoint, { method: 'DELETE' });
     if (res.ok) {
       close();
-      router.push(redirectTo);
+      if (redirectTo) {
+        router.push(redirectTo);
+      }
       router.refresh();
     }
     setLoading(false);

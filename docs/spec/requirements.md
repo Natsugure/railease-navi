@@ -1,171 +1,183 @@
-# 要件: admin フォームの props 化と型ルール有効化 (Issue #49 / #50)
+# 要件: 駅・路線マスタの新規作成手段を Admin に実装する (Issue #88)
 
 ## 概要
 
-- **対象**: `apps/admin`, `apps/web`, `packages/eslint-config`, `packages/typescript-config`, リポジトリルート
+- **対象**: `apps/admin`
 - **参照**: [design.md](./design.md) / [tasks.md](./tasks.md) /
-  [ADR-0001](../adr/0001-layer-structure.md) / [ADR-0003](../adr/0003-read-write-separation.md)
-- **作成日**: 2026-09-06
-- **ブランチ**: `feature/issue49-50-form-props-and-strict-index`
-- **信頼度**: 90%（高）— 違反箇所と件数を実測で確定済み。Query Service の追加は既存の
-  `stopPatternPageQuery` / `stationPublishingPageQuery` にお手本がある
+  [ADR-0001](../adr/0001-layer-structure.md) / [ADR-0002](../adr/0002-dependency-inversion-ports.md) /
+  [ADR-0003](../adr/0003-read-write-separation.md) / [ADR-0005](../adr/0005-write-atomicity-driver.md) /
+  [ADR-0007](../adr/0007-station-master-data-source.md) /
+  [docs/domain/station-master-model.md](../domain/station-master-model.md)
+- **作成日**: 2026-09-08
+- **ブランチ**: `feature/issue88-station-master-create`
+- **信頼度**: 90%（高）— 対象4テーブルのスキーマ・制約・既存参照箇所、既存の
+  Repository / Query Service / route / フォームの実装パターンを実測で確認済み。
+  新しいアーキテクチャ判断（Server Actions 等）は持ち込まず、既存パターンの複製に徹する。
 
-2つの lint / 型ルールが「違反が残っているため無効化されたまま」になっている。
-違反を構造的に解消し、ルールを `error` / `true` で常時有効にする。
-あわせて型チェックを CI で実行する仕組みを整える。
+## 背景
 
-## 現状の実測値（2026-09-06 時点）
+ADR-0007（Accepted）決定1で「駅・路線マスタの投入後の維持は Admin での手動編集が主経路」と決め、
+決定4に従って取込・突合の機構（`master-import` / `master-migration`）を Issue #56 Phase 7 で削除した。
+その結果、以下のテーブルに行を追加する手段がコード上から消えた。
 
-設計判断の前提。数値が変わった場合は本節から再評価する。
+| テーブル | 参照 | 更新 | 作成 | 削除 |
+|---|---|---|---|---|
+| `operators` | ✅ | ✅ | ✅ `POST /api/operators` | ✅ |
+| `stations` | ✅ | ✅ `PUT /api/stations/[stationId]` | ❌ | ❌ |
+| `lines` | ✅ | ✅ `PUT /api/lines/[lineId]` | ❌ | ❌ |
+| `stationConnections` | ✅ | ✅ `PUT /api/station-connections/[connectionId]` | ❌ | ❌ |
+| `stationAdjacencies` | **アプリコードでの参照ゼロ** | ❌ | ❌ | ❌ |
+| `stationGroups` | — | — | ❌ | ❌ |
 
-| 項目 | 実測 | Issue 本文の記述 |
-|---|---|---|
-| `no-floating-promises` 違反 | **9件 / 6ファイル**（`pnpm exec eslint .`） | 11件 |
-| `noUncheckedIndexedAccess` 有効時の型エラー（フラグ起因） | **admin 31件 / web 46件 = 計77件** | admin 39 / web 51 + 既存9 |
-| フラグ無しの型エラー（ベースライン） | **全ワークスペース0件** | apps/web に既存9件 |
-| `apps/admin/eslint.config.mjs` の `legacyExclusions` | 39ファイル | — |
+このため、新駅・新路線の開業に対応できず、`station_g_cd` が捉えない乗り換え
+（地下通路・連絡改札で繋がる別グループ間）を `source = 'manual'` で足すこともできない。
+`docs/domain/station-master-model.md` が想定している運用が実行不能な状態にある。
 
-### Issue 本文との差分（重要）
+## スコープ
 
-Issue #49 / #50 は執筆後にコードが動いたため、本文の記述が古い。
+### やること
 
-- `src/app/unresolved-connections/page.tsx` は**コミット `4fe1419` で削除済み**。
-  #49 が「唯一 restructure が必要」とした最難関は消滅し、残る9件はすべて props 化で解消する。
-- `FacilityForm` / `PlatformForm` / `TrainForm` は
-  `src/features/{facility,platform,train}/components/` へ移動済み。
-- #50 が「スコープ外」とした既存9件（`platformCarStopPositions` / `CarStopPosition` /
-  `maxCarCount`）は**すでに解消済み**。→ 該当チェックボックスは対応不要。
-- `LineDirectionForm.tsx` の `react-hooks/set-state-in-effect` は現在発火していない
-  （`loadedLineId` を使う書き方が該当ルールに当たっていない）。props 化で
-  `useEffect` ごと消えるため、いずれにせよ解消される。
+- `stations` / `lines` の作成 API と Admin UI
+- `stationConnections` の作成・削除 API と Admin UI（有向2行を対で作成・削除、冪等）
+- `stationAdjacencies` の作成・削除 API と Admin UI（端点 UUID の昇順正規化を書き込み側で実装）
 
-### `no-floating-promises` 違反の内訳
+### やらないこと（別 Issue へ）
 
-すべて `useEffect` 内でマスタデータを fetch し直しているもの。`.catch` が1つも無い。
+- `stationGroups` の新規作成。`ekidataStationGroupCd` が NOT NULL + UNIQUE のため、
+  スキーマ変更なしには作成できない。ekidata コードを持たない乗換単位の識別方法という
+  ドメイン判断が要るため、独立した Issue + ADR で扱う。本 Issue の駅作成フォームは
+  **既存グループへの紐付けのみ**を扱う
+- 駅名の重複検出。正規化規則は `station-master-model.md`「駅名の正規化ルール」に
+  記載済みだが、旧実装（`features/master-import/domain/normalize.ts`）は削除済みで
+  再実装になる。作成フォームの警告として入れる要件が未確定のため別 Issue へ
+- 既存の PUT ルート群・既存フォームの書き換え。本 Issue は作成・削除経路の追加のみ
+- 一覧の事業者スコープ化・検索・並び替え（#94）、ダッシュボード整理（#93）、
+  設備編集の図統合（#95）。UI は既存構成を最小限踏襲するに留める
+- `serviceRoutes` / `serviceRouteSegments` などの運行系統概念（#83）
 
-| ファイル | 行 | 取得しているデータ |
-|---|---|---|
-| `src/components/LineForm.tsx` | 42 | `GET /api/operators` |
-| `src/components/StationEditForm.tsx` | 102 | `GET /api/operators` |
-| `src/components/LineDirectionForm.tsx` | 55 | `GET /api/stations?lineId=` |
-| `src/features/train/components/TrainForm.tsx` | 58 | `GET /api/operators` + `GET /api/lines` |
-| `src/features/platform/components/PlatformForm.tsx` | 56, 66, 69 | `GET /api/lines` / `GET /api/lines/{id}/directions` |
-| `src/features/facility/components/FacilityForm.tsx` | 112, 127 | ホーム・設備タイプ・接続候補駅 + 接続候補駅ごとのホーム/方面（N+1） |
+## 既存パターンの踏襲（新規性を持ち込まない）
 
-### 現状の実害（Issue #49 本文より、実コードで確認済み）
+| 層 | 既存のお手本 |
+|---|---|
+| 書き込み API | `POST /api/stations/[stationId]/platforms/route.ts`（`@/di` 経由の Repository・zod feature schema・201・ドメインエラー→HTTP写像） |
+| ドメインエラー→HTTP | `PATCH /api/stations/[stationId]/publication/route.ts`（409/422/404/400、JSON parse ガード） |
+| ports + 実装 + 配線 | `features/*/ports.ts` + `external/repository/*.ts` + `di.ts` |
+| zod スキーマ | `features/platform/schema.ts`（`z.infer` で Input 型 export、`schema.test.ts` を対で） |
+| 作成フォーム | `OperatorForm.tsx`（`useState` + `fetch` + `router.push`/`refresh`、失敗時 `alert`） |
+| 作成ページ | `app/operators/new/page.tsx` / `app/trains/new/page.tsx`（`getCreateContext()` で選択肢） |
+| 選択肢供給 | `LineDirectionEditPageQuery.getCreateContext(lineId)`（Server Component の props、クライアント `fetch` 新設なし） |
+| 削除ボタン | `components/DeleteButton.tsx`（`endpoint` に `DELETE` fetch → Mantine Modal 確認） |
+| トランザクション | `stationPublishingRepository.ts`（`withTransaction`、23505 は `err.cause.code`、`isUniqueViolation`） |
 
-- **失敗時にスピナー永久固着**: `setDataLoading(false)` が成功パスにしかない
-  （`FacilityForm` / `TrainForm`）
-- **無言で壊れる**: ローディング表示すら無くセレクトが空のまま（`LineForm` / `StationEditForm`）
-- **レースコンディション**: `lineId` 変更時に古いレスポンスが後着で勝つ
-  （`PlatformForm:69` / `LineDirectionForm:55`。`AbortController` なし）
-- **N+1 リクエスト**: `FacilityForm:127` は接続候補駅ごとに2本 fetch を投げ、
-  内側 `Promise.all` が外側の `.then` から切り離されており失敗が完全に消える
-- **ルール回避ハック**: `PlatformForm:66` の `Promise.resolve().then(() => setDirections([]))`
+**追加しないもの**: `'use server'` / Server Action、`revalidatePath`、新規 ADR、
+`packages/eslint-config` の変更、`src/shared/` への新規基盤ファイル。
 
 ## ユーザーストーリーと受け入れ基準（EARS 記法）
 
-### US-1: フォームの選択肢を即時表示する
+### US-1: 新規路線を作成する
 
-**管理者が編集・新規ページを開いたとき、システムは選択肢（事業者・路線・駅・方面・ホーム）を
-最初の描画時点で埋めて表示すること。**
-
-- 受け入れ基準:
-  - LineForm / StationEditForm / TrainForm の事業者・路線セレクトが、
-    描画直後に選択肢を持つ（従来の「一瞬空」「スピナー」が無い）
-  - フォームのどのコンポーネントにも、選択肢取得のための `useEffect` が無い
-  - 選択肢はすべて親の Server Component から props で渡る
-
-### US-2: 路線切り替え時に方面が即座に追従する
-
-**PlatformForm で管理者が路線を切り替えたとき、システムは追加の fetch なしに
-その路線の上り／下り方面を表示すること。**
+**管理者が路線の新規作成フォームを送信したとき、システムは `lines` に1行を追加し、
+一覧に反映すること。**
 
 - 受け入れ基準:
-  - `inboundDirections` / `outboundDirections` が props から引いた純粋な派生値である
-  - `Promise.resolve().then(...)` によるルール回避が無い
-  - 路線を素早く切り替えても、古い方面リストが後着で勝つことがない
+  - `/lines/new` に事業者セレクトが初期描画時点で埋まっている
+  - `name` と `operatorId` は必須。未入力なら 400 で弾かれフォームに留まる
+  - 作成後、`/lines` 一覧の該当事業者の行に新路線が出る
+  - 新規行の `ekidataLineCd` / `slug` は NULL
+  - `/lines` に「+ 新規」への導線がある
 
-### US-3: 接続候補駅の情報を単一クエリ群でまとめて取得する
+### US-2: 新規駅を作成する
 
-**FacilityForm を開いたとき、システムは接続候補駅とそのホーム・方面を、
-駅ごとの個別リクエストなしにまとめて取得すること。**
-
-- 受け入れ基準:
-  - 接続候補駅の DTO に、その駅のホーム一覧・方面一覧がネストされている
-  - フォーム表示時にブラウザから `/api/` への GET が1本も飛ばない
-  - `connectionRows` の初期値が props から `useState` の遅延初期化で組み立てられる
-
-### US-4: 望ましくない挙動が構造ごと消える
-
-**選択肢取得の `useEffect` が削除された場合、システムはスピナー固着・無言の失敗・
-レース・N+1・ルール回避ハックのいずれも起こさないこと。**
+**管理者が駅の新規作成フォームを送信したとき、システムは `stations` に1行と
+`stationLines` に1行を1トランザクションで追加すること。**
 
 - 受け入れ基準:
-  - `dataLoading` / `linesLoading` / `loadedLineId` などの取得用ローディング状態が
-    フォームから消えている
-  - `pnpm exec eslint .`（apps/admin）が 0 problems
+  - `/stations/new` に事業者・路線のセレクトが初期描画時点で埋まっている
+  - `name` / `operatorId` / `lineId` は必須
+  - 作成された駅は `publishedAt = NULL` / `slug = NULL`。一覧・検索・詳細・公開APIに出ない
+  - フォームに `slug` 入力欄が無い（公開操作で確定する。station-master-model.md）
+  - 新規行の `ekidataStationCd` は NULL
+  - 作成後、`/stations` の該当路線配下に新駅が出て、`/stations/[id]/publish` から公開できる
+  - `stations` INSERT 後に `stationLines` INSERT が失敗した場合、`stations` の行も残らない
 
-### US-5: 未使用になった API GET を撤去する
+### US-3: 乗換接続を追加する
 
-**props 化で admin 内から呼び出し元が無くなった GET ハンドラがある場合、
-システムはそのコードを残さないこと。**
-
-- 受け入れ基準:
-  - `api/facility-types` / `api/lines`（GET） / `api/stations`（GET） /
-    `api/stations/[stationId]/directions` の各ルートファイルが削除されている
-  - `api/operators` / `api/lines/[lineId]/directions` /
-    `api/stations/[stationId]/platforms` から GET だけが削除され、POST は残る
-  - 既にデッドコードの `api/platforms/route.ts` も削除されている
-  - `api/operators/route.test.ts` の `GET` 記述ブロックが削除され、POST のテストは残る
-
-### US-6: `no-floating-promises` を error に戻す
-
-**#49 の props 化が完了したとき、システムは
-`@typescript-eslint/no-floating-promises` を `error` で適用すること。**
+**管理者が駅Aから駅Bへの乗換接続を追加したとき、システムは `stationConnections` に
+`(A→B)` と `(B→A)` の2行を1トランザクションで `source = 'manual'` として追加すること。**
 
 - 受け入れ基準:
-  - `packages/eslint-config/next-app.mjs` の当該ルールが `"error"`
-  - Issue #49 を指す暫定コメントが削除されている
-  - `legacyExclusions` から、削除した route と Query Service 化した親ページの行が消えている
+  - `/stations/[stationId]/connections/new` で相手駅を事業者→路線で段階的に絞って選べる
+  - 全10,625駅を一度に読み込むクエリが発行されない
+  - 同じ組を再度追加しても行が増えない（`unique_station_connection` を衝突対象にした冪等 upsert）
+  - `connectedStationId === stationId`（自己接続）は 400 で弾かれる
+  - 駅編集ページの接続一覧に「接続を追加」への導線がある
 
-### US-7: `noUncheckedIndexedAccess` を有効化する
+### US-4: 乗換接続を削除する
 
-**`packages/typescript-config/base.json` にフラグが追加されたとき、システムは
-`tsc --noEmit` を全ワークスペースでエラーなく通すこと。**
-
-- 受け入れ基準:
-  - `base.json` に `"noUncheckedIndexedAccess": true` がある
-  - `pnpm run typecheck` が全ワークスペースで 0 errors
-  - 対処は箇所ごとに実態に即して判断する（存在チェック / 安全と言える根拠のある
-    非 null アサーション / ロジック見直し）。機械的な一律変換をしない
-  - テストコード（`*.test.ts`）に限り `!` を許容する（本番コードの安全性に影響しないため）
-
-### US-8: 型チェックを継続的に実行する
-
-**PR が作成されたとき、システムは CI で lint・typecheck・test を実行すること。**
+**管理者が駅編集ページで乗換接続の行を削除したとき、システムは対応する有向2行
+（`A→B` と `B→A`）の両方を削除すること。**
 
 - 受け入れ基準:
-  - `apps/*` / `packages/database` に `typecheck` スクリプトがある
-  - ルート `package.json` に `typecheck`、`turbo.json` に `typecheck` タスクがある
-  - `.github/workflows/` に、`pull_request` で lint → typecheck → test を回す
-    ワークフローがある（DB 接続不要。route handler のテストは `db` をモック済み）
+  - 駅Aの編集ページで接続（相手B）を削除すると、`(A→B)` と `(B→A)` の両方が消える
+  - 削除確認のモーダルが出る（`DeleteButton` の挙動）
+  - 削除後、駅編集ページの接続一覧から当該行が消える
+
+### US-5: 路線内の隣接を追加する
+
+**管理者が路線Lの駅Aと駅Bを隣接として追加したとき、システムは端点 UUID を
+`(stationAId, stationBId)` の昇順に正規化してから `stationAdjacencies` に1行追加すること。**
+
+- 受け入れ基準:
+  - `/lines/[lineId]/adjacencies` に当該路線の駅一覧（`stationLines.stationOrder` 順）が出る
+  - `(A, B)` を追加した後、逆向き `(B, A)` で追加しても行が増えない（昇順正規化 + 冪等 upsert）
+  - `stationAId === stationBId`（自己隣接）は 400 で弾かれる
+  - 端点のいずれかが `lineId` に属さない場合は 422 で弾かれる
+  - `/lines` に「隣接を管理」への導線がある
+
+### US-6: 隣接を削除する
+
+**管理者が隣接管理ページで隣接の行を削除したとき、システムは `stationAdjacencies` の
+当該行を削除し、同じページに留まって一覧を更新すること。**
+
+- 受け入れ基準:
+  - 削除後、隣接一覧から当該行が消える（`router.refresh()` のみ。ページ遷移しない）
+  - 削除確認のモーダルが出る
+
+### US-7: 未認証のアクセスを遮断する
+
+**未認証のリクエストが作成・削除 API に届いたとき、システムは 401 を返すこと。**
+
+- 受け入れ基準:
+  - `middleware.ts` の matcher が新規 `/api/` ルートを覆っており、未認証は 401
+
+### US-8: 層の分離を守る
+
+**新規に追加する書き込み経路は、ADR-0001 / ADR-0003 の層分離に従うこと。**
+
+- 受け入れ基準:
+  - 新規 `route.ts` は `@furatora/database` / `drizzle-orm` を直接 import しない
+    （`@/di` 経由。既存 `legacyExclusions` に新規ファイルを追加しない）
+  - `features/*/ports.ts` は `next/*` を import しない
+  - DB の状態を変えるメソッドは Repository（集約単位）、読み取りは Query Service（DTO）
+  - `pnpm run lint` / `pnpm run typecheck` / `pnpm run build` が通る
 
 ## 制約
 
 - `develop` / `main` での直接作業は禁止（CLAUDE.md）。ブランチを切ってから着手する
-- ADR-0001 の依存ルール: `src/app/**` と `src/features/*/components/**` から
-  `@furatora/database` / `drizzle-orm` を import できない。読み取りは `external/query/` へ置く
-- ADR-0003: 読み取りは Query Service（画面・ユースケース単位、DTO を返す、JOIN 自由）。
-  汎用 CRUD Repository（`findAll` / `findById`）は禁止
-- `packages/database` は web / scripts と共有のため、admin 都合のヘルパーは admin ローカルに置く
-- API の POST / PUT ハンドラの挙動は変えない（props 化は読み取り経路のみ）
+- **本 Issue はスキーマを変更しない**。`db:generate` / `db:push` は不要
+- 隣接の昇順正規化は DB 制約で担保できない（`unique_station_adjacency` は
+  `(lineId, stationAId, stationBId)` 順序依存で逆向きペアを別行として通す）。
+  **書き込み側が守る規約**として実装する（station-master-model.md「隣接」）
+- 乗換接続は有向2行で持つ設計。読み取り側が `eq(stationConnections.stationId, stationId)` で
+  片方向しか見ないため、UI からは対向行もあわせて作る（station-master-model.md「乗換接続」）
+- `withTransaction` 経由の一意制約違反は `err.code` ではなく `err.cause.code` に入る
+  （`stationPublishingRepository.ts` の実測コメント）
+- `apps/scripts/src/seed-master-data.ts` の `onConflict*` は単一カラム target のみ。
+  複合ユニーク制約を衝突対象にするには `target` に配列を渡す（リポジトリ初）
 
-## スコープ外
+## スコープ外（再掲）
 
-- `apps/admin/src/app/stations/page.tsx` の N+1 解消（#48 に残す）
-- `api/stations/[stationId]/platform-locations` / `train-stop-patterns` /
-  `api/trains` 系 GET の Query Service 化（#48 に残す）
-- ADR-0001 / ADR-0003 のステータス変更（#29 の完了判断に属する）
-- `features/` に `usecases/` 層を新設すること（現状どの feature にも無く、
-  page → query の直呼びが実質標準。本Issueもそれに倣う）
+- `stationGroups` の新規作成 → 別 Issue
+- 駅名の重複検出 → 別 Issue
+- 既存 PUT ルート・既存フォームの書き換え
+- #93 / #94 / #95 の UI 刷新

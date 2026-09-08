@@ -1,15 +1,17 @@
 # 駅・路線マスタのモデル
 
-> **適用状況**: 2026-09-06 現在、**実装済み・本番反映済み**。
+> **適用状況**: 2026-09-08 現在、**実装済み・本番反映済み**。
 > 駅・路線マスタの初回シードは 駅データ.jp（ekidata）会員版CSV であり、
 > 本番（Neon `main`）へ投入済み（事業者162 / 路線602 / 駅10,625 / 乗換単位8,782 /
 > 隣接10,040 / 乗換接続6,946）。`packages/database/src/schema.ts` と一致する。
 > CSV の取込・突合を行った Admin の機構（`master-import` / `master-migration`）は
 > **投入完了後に削除済み**（[ADR-0007](../adr/0007-station-master-data-source.md) 決定4 / Issue #56）。
-> 以後の維持は Admin での手動編集が主経路になる。ただし**現時点の Admin は
-> 既存行の更新しかできず、駅・路線・乗換接続・隣接を新規作成する UI / API は無い**
-> （[Issue #88](https://github.com/Natsugure/furatora/issues/88)）。経緯と却下案は
-> [ADR-0007](../adr/0007-station-master-data-source.md)。
+> 以後の維持は Admin での手動編集が主経路。**駅・路線の新規作成、乗換接続・隣接の
+> 作成と削除は Admin から行える**（[Issue #88](https://github.com/Natsugure/furatora/issues/88)。
+> `POST /api/lines` / `POST /api/stations` / `POST /api/stations/[stationId]/connections` /
+> `POST /api/lines/[lineId]/adjacencies` ほか）。乗換単位グループ（`stationGroups`）の
+> 新規作成手段だけは未実装（`ekidataStationGroupCd` が NOT NULL + UNIQUE のため。別 Issue）。
+> 経緯と却下案は [ADR-0007](../adr/0007-station-master-data-source.md)。
 
 ## データ源
 
@@ -105,10 +107,14 @@ ekidata `line_cd` は次を混在させている。設計は「案内路線（�
 - **読み取り側は両方向を見る必要がある**（片方向しか行が無いため）。
 - 初回シードで投入した行はこの昇順正規化を満たしている。ただし
   **`unique_station_adjacency`（`lineId, stationAId, stationBId`）は逆向きペアを別行として
-  通す**ため、DB 制約は逆向き重複を防げない。昇順正規化は**書き込み側が守る規約**であり、
-  現時点でそれを担保するコードは存在しない（初回シードの実装は投入完了後に削除済み）。
-  次に `stationAdjacencies` へ書き込むコードを追加するときは、この正規化を実装すること
-  （作成 API / UI は [Issue #88](https://github.com/Natsugure/furatora/issues/88)）。
+  通す**ため、DB 制約は逆向き重複を防げない。昇順正規化は**書き込み側が守る規約**である。
+  現在の実装は `apps/admin/src/features/station-adjacency/domain/normalize.ts` の
+  純粋関数 `normalizeAdjacencyEndpoints()` が担い、
+  `external/repository/stationAdjacencyRepository.ts` が INSERT 前に必ずこれを通す。
+  作成・削除は `/lines/[lineId]/adjacencies` 画面と
+  `POST/DELETE /api/lines/[lineId]/adjacencies` から行う
+  （[Issue #88](https://github.com/Natsugure/furatora/issues/88)）。
+  Repository は端点が対象路線の `stationLines` に属することも検証する。
 
 ## 乗換接続（`stationConnections`）
 
@@ -119,11 +125,17 @@ ekidata `line_cd` は次を混在させている。設計は「案内路線（�
 | `NULL` | ODPT 時代の行。初回シードの突合時に、難易度・メモがすべて NULL の行だけ削除した |
 
 `station_g_cd` は同一構内の乗り換えしか捉えない。地下通路や連絡改札で繋がる
-別グループ間の乗り換えは、`source = 'manual'` で個別に足す設計である。
-ただし**現時点で行を追加する手段は無い**。Admin にあるのは既存行を更新する
-`PUT /api/station-connections/[connectionId]` だけで、作成 API / UI は
-[Issue #88](https://github.com/Natsugure/furatora/issues/88)。追加時は
-`unique_station_connection` を衝突対象にした冪等な upsert にすること。
+別グループ間の乗り換えは、`source = 'manual'` で個別に足す。
+Admin の駅編集画面の「接続を追加」から
+`POST /api/stations/[stationId]/connections` で作成でき、削除は
+`DELETE /api/stations/[stationId]/connections/[connectedStationId]` で行う
+（[Issue #88](https://github.com/Natsugure/furatora/issues/88)）。
+**乗換接続は有向2行で持つ設計**（読み取り側が `stationId` 一致で片方向しか見ない）ため、
+作成・削除はいずれも `(A→B)` と `(B→A)` を対で扱う。作成は
+`unique_station_connection`（`stationId, connectedStationId`）を衝突対象にした
+`onConflictDoNothing` で冪等（`external/repository/stationConnectionRepository.ts`）。
+難易度・備考は両方向に同じ値が入る。向きで難易度が異なる場合は既存の
+`PUT /api/station-connections/[connectionId]` で個別に直す。
 再取込の機構は無いため、この3区分は現在は**由来の記録**として働く。
 
 ## 駅名の正規化ルール

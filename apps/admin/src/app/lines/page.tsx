@@ -1,8 +1,8 @@
 import { db } from '@furatora/database/client';
 import { lines, operators } from '@furatora/database/schema';
 import { asc } from 'drizzle-orm';
-import { LinkAnchor } from '@/components/LinkElements';
-import { ScrollArea, Table, TableTbody, TableTd, TableTh, TableThead, TableTr, Text, Title } from '@mantine/core';
+import { LinkAnchor, LinkButton } from '@/components/LinkElements';
+import { Group, ScrollArea, Table, TableTbody, TableTd, TableTh, TableThead, TableTr, Text, Title } from '@mantine/core';
 
 export default async function LinesPage() {
   const lineList = await db.select().from(lines).orderBy(asc(lines.displayOrder));
@@ -11,7 +11,10 @@ export default async function LinesPage() {
 
   return (
     <div>
-      <Title order={2} mb="lg">路線</Title>
+      <Group justify="space-between" mb="lg">
+        <Title order={2}>路線</Title>
+        <LinkButton href="/lines/new">+ 新規</LinkButton>
+      </Group>
 
       {lineList.length === 0 ? (
         <Text c="dimmed">路線が見つかりません。</Text>
@@ -40,8 +43,11 @@ export default async function LinesPage() {
                     <LinkAnchor href={`/lines/${line.id}/edit`} size="sm" mr="sm">
                       編集
                     </LinkAnchor>
-                    <LinkAnchor href={`/lines/${line.id}/directions`} size="sm">
+                    <LinkAnchor href={`/lines/${line.id}/directions`} size="sm" mr="sm">
                       方面を管理
+                    </LinkAnchor>
+                    <LinkAnchor href={`/lines/${line.id}/adjacencies`} size="sm">
+                      隣接を管理
                     </LinkAnchor>
                   </TableTd>
                 </TableTr>

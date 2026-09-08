@@ -51,6 +51,15 @@ published_at IS NULL OR slug IS NOT NULL
 （`apps/web` の型は `string`、`?? id` フォールバックは持たない）。
 `slug` の導出規則は [station-master-model.md](./station-master-model.md#slug-の導出規則)。
 
+## 新規駅の初期状態
+
+Admin の駅新規作成（`POST /api/stations` / `features/station/`。Issue #88）は
+`publishedAt = NULL` / `slug = NULL` で行を作る。作成フォームに `slug` 入力欄は無い
+（インポート・新規作成では書かず、公開操作で確定する。
+[station-master-model.md](./station-master-model.md#slug-の導出規則)）。
+CHECK 制約 `published_requires_slug` は `publishedAt = NULL` により自然に満たされる。
+新規駅は下記の公開操作を通すまで一覧・検索・詳細・公開APIのいずれにも出ない。
+
 ## 書き込み側（Admin の公開操作）
 
 可視性は読み取り側の述語が単独で担保するが、書き込み側でも不整合な状態を作らせない。
