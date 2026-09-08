@@ -57,6 +57,7 @@ export const dbStationEditPageQuery: StationEditPageQuery = {
 
     const connections: ConnectionRow[] = connectionRows.map((c) => ({
       id: c.id,
+      connectedStationId: c.connectedStationId,
       connectedStationName: c.connectedStationId ? (stationNameMap.get(c.connectedStationId) ?? null) : null,
       connectedLineName: c.connectedStationId ? (lineNameByStationId.get(c.connectedStationId) ?? null) : null,
       strollerDifficulty: c.strollerDifficulty,

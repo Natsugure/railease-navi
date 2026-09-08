@@ -5,6 +5,8 @@ import { useState } from 'react';
 import type { StrollerDifficulty, WheelchairDifficulty } from '@furatora/database/enums';
 import { STROLLER_DIFFICULTY_META, WHEELCHAIR_DIFFICULTY_META } from '@/constants/difficulty';
 import type { ConnectionRow, OperatorOption } from '@/features/station/ports';
+import { DeleteButton } from '@/components/DeleteButton';
+import { LinkAnchor } from '@/components/LinkElements';
 import {
   Button, Card, Group, NativeSelect, SimpleGrid, Stack, Text, TextInput, Textarea, Title,
 } from '@mantine/core';
@@ -212,9 +214,14 @@ export function StationEditForm({ stationId, initialData, connections, operators
       </section>
 
       <section>
-        <Title order={4} mb="md">
-          乗り換え接続 ({connections.length}件)
-        </Title>
+        <Group justify="space-between" mb="md">
+          <Title order={4}>
+            乗り換え接続 ({connections.length}件)
+          </Title>
+          <LinkAnchor href={`/stations/${stationId}/connections/new`} size="sm">
+            + 接続を追加
+          </LinkAnchor>
+        </Group>
 
         {connections.length === 0 ? (
           <Text size="sm" c="dimmed" fs="italic">乗り換え接続情報がありません</Text>
@@ -225,7 +232,13 @@ export function StationEditForm({ stationId, initialData, connections, operators
               if (!s) return null;
               return (
                 <Card key={conn.id} withBorder padding="md">
-                  <Text fw={500} size="sm" mb="md">{displayName(conn)}</Text>
+                  <Group justify="space-between" mb="md">
+                    <Text fw={500} size="sm">{displayName(conn)}</Text>
+                    <DeleteButton
+                      endpoint={`/api/stations/${stationId}/connections/${conn.connectedStationId}`}
+                      label="接続を削除"
+                    />
+                  </Group>
 
                   <SimpleGrid cols={2} mb="md">
                     <NativeSelect

@@ -16,6 +16,10 @@ async function getOperatorOptions(): Promise<OperatorOption[]> {
 }
 
 export const dbLineEditPageQuery: LineEditPageQuery = {
+  async getCreateContext() {
+    return { operators: await getOperatorOptions() };
+  },
+
   async getEditContext(lineId) {
     const [line] = await db.select().from(lines).where(eq(lines.id, lineId)).limit(1);
     if (!line) return null;
