@@ -218,11 +218,12 @@ Phase 9: ドキュメント更新（docs/domain 上書き・schema.ts コメン�
       `stationAdjacencies` の「この表に書き込むコードは端点 UUID を昇順へ正規化してから」の
       コメントに実装場所（`normalizeAdjacencyEndpoints`）を追記
 - [x] **TASK-9.4** `docs/adr/`: 新規 ADR なし。既存 ADR のステータスも変更しない
-- [ ] **TASK-9.5** GitHub Issue 起票:
-      1. `[station-master] stationGroups の新規作成手段`（`ekidataStationGroupCd` の
-         NOT NULL 解除を伴うドメイン判断。ADR 要）
-      2. `[admin] 駅作成時の駅名重複検出`（`normalize.ts` の再実装。
-         正規化規則は station-master-model.md「駅名の正規化ルール」に記載済み）
+- [x] **TASK-9.5** GitHub Issue 起票:
+      1. #96 `[station-master] stationGroups（乗換単位グループ）の新規作成手段`
+         （`ekidataStationGroupCd` の NOT NULL 解除を伴うドメイン判断。ADR 要）
+      2. #97 `[admin] 駅の新規作成時に駅名の重複を検出して警告する`
+         （`normalize.ts` の再実装。正規化規則は
+         station-master-model.md「駅名の正規化ルール」に記載済み）
 - [ ] **TASK-9.6** `docs/spec/` は次 Issue で全面書き換えされる。恒久知識
       （隣接の昇順正規化・乗換接続の有向2行）が `features/*/ports.ts` /
       `schema.ts` のコメントと `docs/domain/` に残っていることを確認
