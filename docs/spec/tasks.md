@@ -191,11 +191,20 @@ Phase 9: ドキュメント更新（docs/domain 上書き・schema.ts コメン�
 ### Phase 8: PR3 検証
 
 - [ ] **TASK-8.1** `pnpm run lint` / `typecheck` / `test` / `build`
-- [ ] **TASK-8.2** 手動: 接続追加 → `db:studio` で2行・`source='manual'`。再実行で増えない
-- [ ] **TASK-8.3** 手動: 駅編集ページで接続削除 → 2行とも消える
-- [ ] **TASK-8.4** 手動: 隣接追加 → 逆向きで再追加しても増えない（`normalize` の確認）
-- [ ] **TASK-8.5** 手動: 隣接の端点が路線外 → 422（別路線の駅を直接 POST）
+- [x] **TASK-8.2** 手動（Chrome DevTools MCP, Neon `development`）: JR山手線「巣鴨」edit →
+      「+ 接続を追加」→ 事業者=東京メトロ / 路線=丸ノ内線 / 相手駅=方南町 で追加 → `POST` 201。
+      `station_connections` に有向2行・`source='manual'`・同一 `created_at`。
+      同じ組を再 POST → 201 だが行数・`created_at` 不変（`onConflictDoNothing`）
+- [x] **TASK-8.3** 手動: 巣鴨 edit の接続一覧「接続を削除」→ 確認モーダル → `DELETE` 200。
+      方南町ペアの2行とも消滅。既存の都営三田線—巣鴨（2行）は不変。見出しが「1件」に更新
+- [x] **TASK-8.4** 手動: 丸ノ内線 adjacencies で 駅1=荻窪 / 駅2=新高円寺 追加 → 201。
+      `station_adjacencies` 1行、`station_a_id`=荻窪 `< station_b_id`=新高円寺（昇順正規化）。
+      逆順（新高円寺, 荻窪）で再 POST → 201 だが同一 `id` の1行のまま
+- [x] **TASK-8.5** 手動: 丸ノ内線に対し 荻窪 × 巣鴨（山手線・丸ノ内線に無い）を直接 POST → 422
+      `{"error":"隣接の端点がこの路線に属していません"}`。端点順序を入替えても 422、行は未作成
 - [ ] **TASK-8.6** `toSQL()` で複合 `ON CONFLICT (...)` 句・候補クエリのスコープ絞りを確認
+      （候補クエリのスコープ絞りは TASK-8.2 の手動操作でも確認済み: 相手駅セレクトは
+      選択路線の28駅のみを表示し、全10,625駅を読まない・自駅も除外）
 - [ ] **TASK-8.7** PR3 作成（gh-stack、PR2 の上）
 
 ---
