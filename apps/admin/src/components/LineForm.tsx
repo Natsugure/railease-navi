@@ -1,66 +1,65 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Button, Group, NativeSelect, NumberInput, Stack, TextInput } from '@mantine/core';
+import type { OperatorOption } from '@/features/line/ports';
 
-type Operator = {
-  id: string;
+type LineFormData = {
   name: string;
+  nameKana: string | null;
+  nameEn: string | null;
+  odptRailwayId: string | null;
+  slug: string | null;
+  lineCode: string | null;
+  color: string | null;
+  displayOrder: number;
+  operatorId: string;
 };
 
+// 新規作成と編集を1つのコンポーネントで扱う（OperatorForm と同じ方針）。
+// lineId が渡されれば PUT（編集）、無ければ POST /api/lines（新規作成・Issue #88）。
+// 新規作成では slug 欄を出さない（公開操作の周辺で確定する。
+// docs/domain/station-master-model.md「slug の導出規則」）。
 type Props = {
-  lineId: string;
-  initialData: {
-    name: string;
-    nameKana: string | null;
-    nameEn: string | null;
-    odptRailwayId: string | null;
-    slug: string | null;
-    lineCode: string | null;
-    color: string | null;
-    displayOrder: number;
-    operatorId: string;
-  };
+  lineId?: string;
+  initialData?: LineFormData;
+  operators: OperatorOption[];
 };
 
-export function LineForm({ lineId, initialData }: Props) {
+export function LineForm({ lineId, initialData, operators }: Props) {
   const router = useRouter();
-  const [name, setName] = useState(initialData.name);
-  const [nameKana, setNameKana] = useState(initialData.nameKana ?? '');
-  const [nameEn, setNameEn] = useState(initialData.nameEn ?? '');
-  const [odptRailwayId, setOdptRailwayId] = useState(initialData.odptRailwayId ?? '');
-  const [slug, setSlug] = useState(initialData.slug ?? '');
-  const [lineCode, setLineCode] = useState(initialData.lineCode ?? '');
-  const [color, setColor] = useState(initialData.color ?? '');
-  const [displayOrder, setDisplayOrder] = useState<number | string>(initialData.displayOrder);
-  const [operatorId, setOperatorId] = useState(initialData.operatorId);
-  const [operators, setOperators] = useState<Operator[]>([]);
+  const isEdit = lineId !== undefined;
+  const [name, setName] = useState(initialData?.name ?? '');
+  const [nameKana, setNameKana] = useState(initialData?.nameKana ?? '');
+  const [nameEn, setNameEn] = useState(initialData?.nameEn ?? '');
+  const [odptRailwayId, setOdptRailwayId] = useState(initialData?.odptRailwayId ?? '');
+  const [slug, setSlug] = useState(initialData?.slug ?? '');
+  const [lineCode, setLineCode] = useState(initialData?.lineCode ?? '');
+  const [color, setColor] = useState(initialData?.color ?? '');
+  const [displayOrder, setDisplayOrder] = useState<number | string>(initialData?.displayOrder ?? 0);
+  const [operatorId, setOperatorId] = useState(initialData?.operatorId ?? operators[0]?.id ?? '');
   const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    fetch('/api/operators')
-      .then((r) => r.json())
-      .then(setOperators);
-  }, []);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setSubmitting(true);
 
-    const res = await fetch(`/api/lines/${lineId}`, {
-      method: 'PUT',
+    const orderValue = typeof displayOrder === 'number' ? displayOrder : 0;
+    // slug は編集時のみ送る（新規作成では公開操作の周辺で確定するため body に含めない）。
+    const res = await fetch(isEdit ? `/api/lines/${lineId}` : '/api/lines', {
+      method: isEdit ? 'PUT' : 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         name,
+        operatorId,
         nameKana: nameKana || null,
         nameEn: nameEn || null,
         odptRailwayId: odptRailwayId || null,
-        slug: slug || null,
         lineCode: lineCode || null,
         color: color || null,
-        displayOrder: typeof displayOrder === 'number' ? displayOrder : 0,
-        operatorId,
+        displayOrder: orderValue,
+        ...(isEdit ? { slug: slug || null } : {}),
       }),
     });
 
@@ -110,12 +109,14 @@ export function LineForm({ lineId, initialData }: Props) {
           value={odptRailwayId}
           onChange={(e) => setOdptRailwayId(e.target.value)}
         />
-        <TextInput
-          label="スラッグ - 任意"
-          placeholder="例: tokyo-metro-ginza"
-          value={slug}
-          onChange={(e) => setSlug(e.target.value)}
-        />
+        {isEdit && (
+          <TextInput
+            label="スラッグ - 任意"
+            placeholder="例: tokyo-metro-ginza"
+            value={slug}
+            onChange={(e) => setSlug(e.target.value)}
+          />
+        )}
         <Group grow>
           <TextInput
             label="路線コード - 任意"
@@ -138,7 +139,7 @@ export function LineForm({ lineId, initialData }: Props) {
         />
         <Group gap="sm">
           <Button type="submit" loading={submitting}>
-            更新
+            {isEdit ? '更新' : '作成'}
           </Button>
           <Button variant="default" onClick={() => router.push('/lines')}>
             キャンセル

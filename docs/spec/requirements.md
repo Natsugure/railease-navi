@@ -1,204 +1,183 @@
-# 要件: 駅・路線マスタの ekidata 移行 (Issue #56 / ADR-0007)
+# 要件: 駅・路線マスタの新規作成手段を Admin に実装する (Issue #88)
 
 ## 概要
 
-- **対象**: `packages/database`, `apps/admin`, `apps/scripts`, `apps/web`
-- **参照**: [ADR-0007](../adr/0007-station-master-data-source.md) / [design.md](./design.md) / [tasks.md](./tasks.md)
-- **作成日**: 2026-08-28
-- **ブランチ**: `docs/station-database-transition`
-- **信頼度**: 88%（高）— 移行対象の実測が完了し、突合の解決率まで確認済み
+- **対象**: `apps/admin`
+- **参照**: [design.md](./design.md) / [tasks.md](./tasks.md) /
+  [ADR-0001](../adr/0001-layer-structure.md) / [ADR-0002](../adr/0002-dependency-inversion-ports.md) /
+  [ADR-0003](../adr/0003-read-write-separation.md) / [ADR-0005](../adr/0005-write-atomicity-driver.md) /
+  [ADR-0007](../adr/0007-station-master-data-source.md) /
+  [docs/domain/station-master-model.md](../domain/station-master-model.md)
+- **作成日**: 2026-09-08
+- **ブランチ**: `feature/issue88-station-master-create`
+- **信頼度**: 90%（高）— 対象4テーブルのスキーマ・制約・既存参照箇所、既存の
+  Repository / Query Service / route / フォームの実装パターンを実測で確認済み。
+  新しいアーキテクチャ判断（Server Actions 等）は持ち込まず、既存パターンの複製に徹する。
 
-駅・路線マスタの同期元を ODPT から 駅データ.jp（ekidata）会員版CSV へ移行する。
-ODPT ID は動的データへの参照キーとして保持する（ADR-0007 決定3）。
+## 背景
 
-## 現状の実測値（2026-08-28 時点の本番DB）
+ADR-0007（Accepted）決定1で「駅・路線マスタの投入後の維持は Admin での手動編集が主経路」と決め、
+決定4に従って取込・突合の機構（`master-import` / `master-migration`）を Issue #56 Phase 7 で削除した。
+その結果、以下のテーブルに行を追加する手段がコード上から消えた。
 
-設計判断の前提。数値が変わった場合は本節から再評価する。
+| テーブル | 参照 | 更新 | 作成 | 削除 |
+|---|---|---|---|---|
+| `operators` | ✅ | ✅ | ✅ `POST /api/operators` | ✅ |
+| `stations` | ✅ | ✅ `PUT /api/stations/[stationId]` | ❌ | ❌ |
+| `lines` | ✅ | ✅ `PUT /api/lines/[lineId]` | ❌ | ❌ |
+| `stationConnections` | ✅ | ✅ `PUT /api/station-connections/[connectionId]` | ❌ | ❌ |
+| `stationAdjacencies` | **アプリコードでの参照ゼロ** | ❌ | ❌ | ❌ |
+| `stationGroups` | — | — | ❌ | ❌ |
 
-| テーブル | 件数 | 備考 |
-|---|---|---|
-| `operators` | 17 | メトロ・都営 + 未解決接続由来15件。**全件に `odptOperatorId` あり** |
-| `lines` | 62 | メトロ10 + 都営6 + 未解決由来46 |
-| `stations` | 481 | メトロ186 + 都営149 + 未解決由来146 |
-| `station_lines` | 481 | 複数路線を持つ駅は0件。**ただし不変条件ではないため制約は付けない**（[design.md](./design.md)） |
-| `station_connections` | 546 | 未解決行0 / **難易度入力済み0件** |
-| `platforms` | 14 | 7駅 |
-| `line_directions` | 52 | |
-| `trains` | 10 | |
-| `platform_locations` / `station_facilities` / `train_stop_patterns` / `facility_connections` | **すべて0** | |
+このため、新駅・新路線の開業に対応できず、`station_g_cd` が捉えない乗り換え
+（地下通路・連絡改札で繋がる別グループ間）を `source = 'manual'` で足すこともできない。
+`docs/domain/station-master-model.md` が想定している運用が実行不能な状態にある。
 
-**未解決接続由来の146駅は `lat`/`lon` を持たない。** 生成元の
-`POST /api/unresolved-connections/stations` が座標を設定しないため。
-座標近傍による突合はこの146件に対して使えない。
+## スコープ
 
-## ekidata 会員版CSV の前提
+### やること
 
-**2026-08 配布分（company20260409 / line20260618 / station20260731 / join20260618）の実測。**
-初版に記載していた数値は無料版CSV由来であり、会員版とは一致しなかった。
-差が出るのは新幹線160駅の有無である（下記 C-1）。
+- `stations` / `lines` の作成 API と Admin UI
+- `stationConnections` の作成・削除 API と Admin UI（有向2行を対で作成・削除、冪等）
+- `stationAdjacencies` の作成・削除 API と Admin UI（端点 UUID の昇順正規化を書き込み側で実装）
 
-| ファイル | 全行 | 現役（`e_status = 0`） | 一意キー |
-|---|---|---|---|
-| `company` | 175 | **162** | `company_cd` |
-| `line` | 624 | **602** | `line_cd` |
-| `station` | 11,127 | **10,625** | `station_cd`（路線×駅粒度） |
-| `join` | 10,189 | — | `(line_cd, station_cd1, station_cd2)` |
+### やらないこと（別 Issue へ）
 
-- `e_status` は **0 = 現役 / 1 = 未開業 / 2 = 廃止** の3値である。
-  取り込むのは 0 のみ。1（路線1件・駅5件）は取り込まず、廃止扱いにもしない
-- `station_g_cd` は**乗換駅グループ**を表す。現役駅で **8,782グループ**、
-  複数駅を含むグループ **1,156件**、有向ペア **6,946件**
-- `station_cd` の上位桁は `line_cd` と一致しない（137件の例外）。`line_cd` 列を使うこと
-- `station_g_cd` に **59件**のダングリング参照がある
-  （9件はどの `station_cd` にも存在せず、50件は廃止駅を指す）
-- `join` の 10,189行のうち **149行は取り込めない**。142行は `line_cd` が現役路線でなく、
-  7行は端点が現役駅でない。FK を張れないため、投入対象は **10,040行**
-- 日付列（`open_ymd` / `close_ymd`）の未設定値は `0000-00-00` である。date 列に入れられない
-- `line_color_c` は `#` の無い6桁16進である（現役602件のうち1件が空）
-- **引用符は1件も無く、全行の列数がヘッダと一致する。** 住所列（列名は `address`）にも
-  カンマは含まれない。CSVパーサに引用符処理は要らない
+- `stationGroups` の新規作成。`ekidataStationGroupCd` が NOT NULL + UNIQUE のため、
+  スキーマ変更なしには作成できない。ekidata コードを持たない乗換単位の識別方法という
+  ドメイン判断が要るため、独立した Issue + ADR で扱う。本 Issue の駅作成フォームは
+  **既存グループへの紐付けのみ**を扱う
+- 駅名の重複検出。正規化規則は `station-master-model.md`「駅名の正規化ルール」に
+  記載済みだが、旧実装（`features/master-import/domain/normalize.ts`）は削除済みで
+  再実装になる。作成フォームの警告として入れる要件が未確定のため別 Issue へ
+- 既存の PUT ルート群・既存フォームの書き換え。本 Issue は作成・削除経路の追加のみ
+- 一覧の事業者スコープ化・検索・並び替え（#94）、ダッシュボード整理（#93）、
+  設備編集の図統合（#95）。UI は既存構成を最小限踏襲するに留める
+- `serviceRoutes` / `serviceRouteSegments` などの運行系統概念（#83）
 
----
+## 既存パターンの踏襲（新規性を持ち込まない）
 
-## ユーザーストーリーと受け入れ基準（EARS記法）
+| 層 | 既存のお手本 |
+|---|---|
+| 書き込み API | `POST /api/stations/[stationId]/platforms/route.ts`（`@/di` 経由の Repository・zod feature schema・201・ドメインエラー→HTTP写像） |
+| ドメインエラー→HTTP | `PATCH /api/stations/[stationId]/publication/route.ts`（409/422/404/400、JSON parse ガード） |
+| ports + 実装 + 配線 | `features/*/ports.ts` + `external/repository/*.ts` + `di.ts` |
+| zod スキーマ | `features/platform/schema.ts`（`z.infer` で Input 型 export、`schema.test.ts` を対で） |
+| 作成フォーム | `OperatorForm.tsx`（`useState` + `fetch` + `router.push`/`refresh`、失敗時 `alert`） |
+| 作成ページ | `app/operators/new/page.tsx` / `app/trains/new/page.tsx`（`getCreateContext()` で選択肢） |
+| 選択肢供給 | `LineDirectionEditPageQuery.getCreateContext(lineId)`（Server Component の props、クライアント `fetch` 新設なし） |
+| 削除ボタン | `components/DeleteButton.tsx`（`endpoint` に `DELETE` fetch → Mantine Modal 確認） |
+| トランザクション | `stationPublishingRepository.ts`（`withTransaction`、23505 は `err.cause.code`、`isUniqueViolation`） |
 
-### US-1: 管理者として、ekidata CSV をアップロードしてマスタを更新したい
+**追加しないもの**: `'use server'` / Server Action、`revalidatePath`、新規 ADR、
+`packages/eslint-config` の変更、`src/shared/` への新規基盤ファイル。
 
-- **REQ-1.1**: 管理者が4種のCSV（company / line / station / join）をアップロードしたとき、
-  システムはそれらを解析し、適用前に差分計画を提示すること
-- **REQ-1.2**: 差分計画を提示する際、システムは新規件数・更新件数・廃止件数・
-  突合失敗件数をテーブルごとに表示すること
-- **REQ-1.3**: 管理者が差分計画を承認したとき、システムは変更をトランザクション内で適用すること
-- **REQ-1.4**: CSVの必須列が欠落している場合、システムは適用せずに
-  どのファイルのどの列が欠けているかを報告すること
-- **REQ-1.5**: 同一のCSVを再度アップロードしたとき、システムは
-  差分0件として報告し、データを変更しないこと（冪等性）
-- **REQ-1.6**: `station` CSV が 1.4MB を超える場合でも、システムは
-  アップロードを受け付けること
+## ユーザーストーリーと受け入れ基準（EARS 記法）
 
-### US-2: 管理者として、インポートで手入力データを失いたくない
+### US-1: 新規路線を作成する
 
-- **REQ-2.1**: インポートを実行するとき、システムは furatora 固有の列
-  （`slug` / `nameEn` / `code` / `notes` / `publishedAt` /
-  `displayOrder` / `displayPriority` / `lineCode`）を変更しないこと
-- **REQ-2.2**: CSV の値が空文字または NULL である場合、システムは
-  既存の値を保持すること（空値での上書きを行わない）
-- **REQ-2.3**: インポートを実行するとき、システムは既存の
-  `platforms` / `lineDirections` / `trains` および設備系テーブルの行を削除しないこと
+**管理者が路線の新規作成フォームを送信したとき、システムは `lines` に1行を追加し、
+一覧に反映すること。**
 
-### US-3: 開発者として、既存の ODPT 由来データを ekidata に突合したい
+- 受け入れ基準:
+  - `/lines/new` に事業者セレクトが初期描画時点で埋まっている
+  - `name` と `operatorId` は必須。未入力なら 400 で弾かれフォームに留まる
+  - 作成後、`/lines` 一覧の該当事業者の行に新路線が出る
+  - 新規行の `ekidataLineCd` / `slug` は NULL
+  - `/lines` に「+ 新規」への導線がある
 
-- **REQ-3.1**: 突合が実行されたとき、システムは
-  `operators` / `lines` / `stations` の各行に `ekidata*Cd` を設定すること
-- **REQ-3.2**: 突合できない行が存在する場合、システムは
-  当該行を削除せず `ekidata*Cd` を NULL のまま残し、一覧として報告すること
-- **REQ-3.3**: 駅名を突合する際、システムは括弧とその内容を除去し、
-  `ヶ`/`ケ` の揺れを吸収した上で比較すること
-- **REQ-3.4**: 移行を実行するとき、システムは `stations.id` / `lines.id` を変更しないこと
-  （`platforms` / `lineDirections` 等の参照を維持するため）
-- **REQ-3.5**: 複数の既存行が同じ ekidata コードに突合した場合、システムは
-  適用を実行せず、その組を報告すること（`ekidata*Cd` は一意制約付きであるため）
+### US-2: 新規駅を作成する
 
-### US-4: 管理者として、乗換接続を管理したい
+**管理者が駅の新規作成フォームを送信したとき、システムは `stations` に1行と
+`stationLines` に1行を1トランザクションで追加すること。**
 
-- **REQ-4.1**: インポートを実行するとき、システムは同一 `station_g_cd` に属する
-  現役駅の全順序対を乗換接続として生成すること
-- **REQ-4.2**: 管理者が乗換接続を手動で追加したとき、システムは
-  その行を `source = 'manual'` として記録すること
-- **REQ-4.3**: インポートを再実行するとき、システムは
-  `source = 'manual'` の行を削除・変更しないこと
-- **REQ-4.4**: 既に難易度が入力されている接続に対してインポートが行われたとき、
-  システムは難易度およびメモを保持すること
+- 受け入れ基準:
+  - `/stations/new` に事業者・路線のセレクトが初期描画時点で埋まっている
+  - `name` / `operatorId` / `lineId` は必須
+  - 作成された駅は `publishedAt = NULL` / `slug = NULL`。一覧・検索・詳細・公開APIに出ない
+  - フォームに `slug` 入力欄が無い（公開操作で確定する。station-master-model.md）
+  - 新規行の `ekidataStationCd` は NULL
+  - 作成後、`/stations` の該当路線配下に新駅が出て、`/stations/[id]/publish` から公開できる
+  - `stations` INSERT 後に `stationLines` INSERT が失敗した場合、`stations` の行も残らない
 
-### US-5: 開発者として、路線概念の分類を確定させたい
+### US-3: 乗換接続を追加する
 
-当初は運行系統のスキーマ（`serviceRoutes`）を今回新設する予定だったが、
-**取りやめた。** 1つの概念に見えていたものが3種類に割れ、
-うち2種類は別の概念だったためである（[design.md](./design.md) 参照）。
-今回はデータを1件も投入しないため、未分化のままスキーマに固定しない。
+**管理者が駅Aから駅Bへの乗換接続を追加したとき、システムは `stationConnections` に
+`(A→B)` と `(B→A)` の2行を1トランザクションで `source = 'manual'` として追加すること。**
 
-- **REQ-5.1**: 路線概念を分類するとき、システムの設計は
-  「案内路線（表示単位）」と「運行系統（列車の走り方）」を別概念として扱うこと
-- **REQ-5.2**: ekidata `line_cd` を扱うとき、システムは
-  それが線路名称・案内名・運行系統・列車名・直通運転を混在させている前提で扱うこと
+- 受け入れ基準:
+  - `/stations/[stationId]/connections/new` で相手駅を事業者→路線で段階的に絞って選べる
+  - 全10,625駅を一度に読み込むクエリが発行されない
+  - 同じ組を再度追加しても行が増えない（`unique_station_connection` を衝突対象にした冪等 upsert）
+  - `connectedStationId === stationId`（自己接続）は 400 で弾かれる
+  - 駅編集ページの接続一覧に「接続を追加」への導線がある
 
-### US-6: 利用者として、全国の駅を検索したい
+### US-4: 乗換接続を削除する
 
-- **REQ-6.1**: 利用者が駅名を漢字またはカナで入力したとき、
-  システムは部分一致する駅を返すこと
+**管理者が駅編集ページで乗換接続の行を削除したとき、システムは対応する有向2行
+（`A→B` と `B→A`）の両方を削除すること。**
 
-> **REQ-6.2 は削除した。** 「slug 未設定なら `id` で誘導する」を定めていたが、
-> `publishedAt` に CHECK 制約（公開駅は slug 必須）を課すため、
-> この状況は発生しなくなる。未公開駅は誘導対象でもない。
-> 現行の `station.slug ?? station.id`（`StationCard.tsx:15` /
-> `StationSearch.tsx:112`）はデッドコードとして整理する。
+- 受け入れ基準:
+  - 駅Aの編集ページで接続（相手B）を削除すると、`(A→B)` と `(B→A)` の両方が消える
+  - 削除確認のモーダルが出る（`DeleteButton` の挙動）
+  - 削除後、駅編集ページの接続一覧から当該行が消える
 
-### US-7: 運営者として、未公開の駅・路線を利用者に見せたくない
+### US-5: 路線内の隣接を追加する
 
-**現行バージョンのバグ。** `operators.displayPriority` が NULL（非表示）の
-事業者に属する駅・路線が、URLを直接指定すると表示できる。実証済み:
-`/lines/yurikamome-yurikamome/stations` および
-`/stations/yurikamome-yurikamome-shiodome`。
-可視性の判定が一覧の取得箇所にしか無く、詳細・API に無いことが原因である
-（[design.md](./design.md) 参照）。`publishedAt` への移行と同時に塞ぐ。
+**管理者が路線Lの駅Aと駅Bを隣接として追加したとき、システムは端点 UUID を
+`(stationAId, stationBId)` の昇順に正規化してから `stationAdjacencies` に1行追加すること。**
 
-- **REQ-7.1**: 利用者が未公開（`publishedAt` が NULL）の駅の詳細ページへ
-  アクセスしたとき、システムは 404 を返すこと
-- **REQ-7.2**: 利用者が、公開されている駅を1件も持たない路線のページへ
-  アクセスしたとき、システムは 404 を返すこと
-- **REQ-7.3**: 公開APIが駅・路線・事業者を返すとき、システムは未公開の駅、
-  および公開駅を1件も持たない路線・事業者を応答に含めないこと
-- **REQ-7.4**: 駅詳細が乗換接続を返すとき、システムは
-  未公開の駅への接続を含めないこと
-- **REQ-7.5**: 可視性の判定を行うとき、システムは単一の関数を通して行うこと
-  （読み取り経路ごとに条件を書かない）
+- 受け入れ基準:
+  - `/lines/[lineId]/adjacencies` に当該路線の駅一覧（`stationLines.stationOrder` 順）が出る
+  - `(A, B)` を追加した後、逆向き `(B, A)` で追加しても行が増えない（昇順正規化 + 冪等 upsert）
+  - `stationAId === stationBId`（自己隣接）は 400 で弾かれる
+  - 端点のいずれかが `lineId` に属さない場合は 422 で弾かれる
+  - `/lines` に「隣接を管理」への導線がある
 
-### 望ましくない動作
+### US-6: 隣接を削除する
 
-- **REQ-8.1**: インポートの適用中にエラーが発生した場合、システムは
-  変更を一切適用せず、エラー内容を報告すること
-- **REQ-8.2**: `station_g_cd` が存在しない `station_cd` を指している場合、
-  システムは当該グループを破棄せず、所属駅から代表値を決定すること
-- **REQ-8.3**: ekidata で `e_status = 2`（廃止）となった駅・路線が
-  既にDBに存在する場合、システムは行を削除せず廃止日を記録すること
+**管理者が隣接管理ページで隣接の行を削除したとき、システムは `stationAdjacencies` の
+当該行を削除し、同じページに留まって一覧を更新すること。**
 
----
+- 受け入れ基準:
+  - 削除後、隣接一覧から当該行が消える（`router.refresh()` のみ。ページ遷移しない）
+  - 削除確認のモーダルが出る
+
+### US-7: 未認証のアクセスを遮断する
+
+**未認証のリクエストが作成・削除 API に届いたとき、システムは 401 を返すこと。**
+
+- 受け入れ基準:
+  - `middleware.ts` の matcher が新規 `/api/` ルートを覆っており、未認証は 401
+
+### US-8: 層の分離を守る
+
+**新規に追加する書き込み経路は、ADR-0001 / ADR-0003 の層分離に従うこと。**
+
+- 受け入れ基準:
+  - 新規 `route.ts` は `@furatora/database` / `drizzle-orm` を直接 import しない
+    （`@/di` 経由。既存 `legacyExclusions` に新規ファイルを追加しない）
+  - `features/*/ports.ts` は `next/*` を import しない
+  - DB の状態を変えるメソッドは Repository（集約単位）、読み取りは Query Service（DTO）
+  - `pnpm run lint` / `pnpm run typecheck` / `pnpm run build` が通る
 
 ## 制約
 
-### C-1: 新幹線の駅は会員版CSVに含まれる（2026-08-31 確認済み・解消）
+- `develop` / `main` での直接作業は禁止（CLAUDE.md）。ブランチを切ってから着手する
+- **本 Issue はスキーマを変更しない**。`db:generate` / `db:push` は不要
+- 隣接の昇順正規化は DB 制約で担保できない（`unique_station_adjacency` は
+  `(lineId, stationAId, stationBId)` 順序依存で逆向きペアを別行として通す）。
+  **書き込み側が守る規約**として実装する（station-master-model.md「隣接」）
+- 乗換接続は有向2行で持つ設計。読み取り側が `eq(stationConnections.stationId, stationId)` で
+  片方向しか見ないため、UI からは対向行もあわせて作る（station-master-model.md「乗換接続」）
+- `withTransaction` 経由の一意制約違反は `err.code` ではなく `err.cause.code` に入る
+  （`stationPublishingRepository.ts` の実測コメント）
+- `apps/scripts/src/seed-master-data.ts` の `onConflict*` は単一カラム target のみ。
+  複合ユニーク制約を衝突対象にするには `target` に配列を渡す（リポジトリ初）
 
-無料版には12路線すべてで駅データが存在しない。**会員版には存在する。**
-会員版と無料版の現役駅数の差 160件がそれであり、
-東海道新幹線（`line_cd = 1002`）の東京 `100201` / 品川 / 新横浜 … が含まれる。
+## スコープ外（再掲）
 
-したがって現行DBの新幹線11駅は Phase 3 の突合で解決できる。
-本制約は解消した（TASK-3.4 の確認対象も同様）。
-
-### C-2: 駅ナンバリングは ekidata が供給しない
-
-現行DBの146件は ODPT 由来の手入力であり、突合により保持される。
-全国展開分の駅ナンバリングは欠落したまま運用する（ADR-0007「影響」）。
-
-### C-3: `ekidataStationCd` は当面 nullable
-
-突合できない行（新幹線11駅ほか）が残るため、notNull 化は
-未突合ゼロを確認した後の別マイグレーションとする。
-
-### C-4: ekidata データの非加工での第三者提供は無償に限られる
-
-利用規約 第6条。公開API `/api/v1/*` の設計に将来影響しうる（[design.md](./design.md) 参照）。
-
----
-
-## スコープ外
-
-以下は本Issueで扱わない。
-
-| 項目 | 理由 | 行き先 |
-|---|---|---|
-| 経路探索の方式・ベンダ選定 | ADR-0007 決定2 で保留 | Issue #56 |
-| 運行系統の**データ投入**とAdmin管理UI | 今回はスキーマのみ | 後続Issue |
-| 列単位の上書きロック（`lockedFields`） | 列の分離と空値保護で当面足りる | 後続Issue |
-| `facilityConnections` の粒度見直し | 現在0件であり、実データが出てから設計する | 後続Issue |
-| `operators.displayPriority` の全国運用ルール | 表示制御の方針が未定 | 後続Issue |
+- `stationGroups` の新規作成 → 別 Issue
+- 駅名の重複検出 → 別 Issue
+- 既存 PUT ルート・既存フォームの書き換え
+- #93 / #94 / #95 の UI 刷新

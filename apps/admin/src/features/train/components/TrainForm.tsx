@@ -1,16 +1,14 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
-  ActionIcon, Button, Checkbox, Group, Loader, MultiSelect, NativeSelect,
+  ActionIcon, Button, Checkbox, Group, MultiSelect, NativeSelect,
   NumberInput, Stack, Text, TextInput,
 } from '@mantine/core';
 import { Trash2 } from 'lucide-react';
 import { notifications } from '@mantine/notifications';
-
-type Operator = { id: string; name: string };
-type Line = { id: string; name: string; nameEn: string; operatorId: string };
+import type { OperatorOption, TrainLineOption } from '@/features/train/ports';
 
 // @furatora/database/schema には carLength を含まないため、admin側でローカルに定義する
 type CarStructureItem = { carNumber: number; doorCount: number; carLength: number | null };
@@ -30,12 +28,12 @@ type TrainData = {
 type Props = {
   initialData?: TrainData;
   isEdit?: boolean;
+  operators: OperatorOption[];
+  lines: TrainLineOption[];
 };
 
-export function TrainForm({ initialData, isEdit = false }: Props) {
+export function TrainForm({ initialData, isEdit = false, operators, lines }: Props) {
   const router = useRouter();
-  const [operators, setOperators] = useState<Operator[]>([]);
-  const [allLines, setAllLines] = useState<Line[]>([]);
   const [name, setName] = useState(initialData?.name ?? '');
   const [operatorId, setOperatorId] = useState(initialData?.operatorId ?? '');
   const [selectedLineIds, setSelectedLineIds] = useState<string[]>(initialData?.lineIds ?? []);
@@ -51,15 +49,7 @@ export function TrainForm({ initialData, isEdit = false }: Props) {
 
   const [freeSpaces, setFreeSpaces] = useState<EquipmentItem[]>(initialData?.freeSpaces ?? []);
   const [prioritySeats, setPrioritySeats] = useState<EquipmentItem[]>(initialData?.prioritySeats ?? []);
-  const [dataLoading, setDataLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    Promise.all([
-      fetch('/api/operators').then((r) => r.json()).then(setOperators),
-      fetch('/api/lines').then((r) => r.json()).then(setAllLines),
-    ]).then(() => setDataLoading(false));
-  }, []);
 
   function addFreeSpace() {
     setFreeSpaces((prev) => [...prev, { carNumber: 1, nearDoor: 1, isStandard: true }]);
@@ -132,16 +122,7 @@ export function TrainForm({ initialData, isEdit = false }: Props) {
     }
   }
 
-  const lineSelectData = allLines.map((l) => ({ value: l.id, label: l.name }));
-
-  if (dataLoading) {
-    return (
-      <Group gap="xs" align="center">
-        <Loader size="sm" />
-        <Text size="sm" c="dimmed">データを読み込み中...</Text>
-      </Group>
-    );
-  }
+  const lineSelectData = lines.map((l) => ({ value: l.id, label: l.name }));
 
   return (
     <form onSubmit={handleSubmit}>

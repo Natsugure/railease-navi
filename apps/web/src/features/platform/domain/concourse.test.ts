@@ -142,7 +142,7 @@ describe('transferEntries', () => {
       concourse({ connections: [connection({ lineNames, lineColors: lineNames.map(() => null) })] }),
     );
 
-    expect(entries[0].lines.map((l) => l.name)).toEqual(lineNames);
+    expect(entries[0]!.lines.map((l) => l.name)).toEqual(lineNames);
   });
 
   it('路線名と路線カラーを同じ並びで組にする', () => {
@@ -152,7 +152,7 @@ describe('transferEntries', () => {
       }),
     );
 
-    expect(entries[0].lines).toEqual([
+    expect(entries[0]!.lines).toEqual([
       { name: '丸ノ内線', color: '#F62E36' },
       { name: '副都心線', color: '#9C5E31' },
     ]);
@@ -163,7 +163,7 @@ describe('transferEntries', () => {
       concourse({ connections: [connection({ lineNames: ['都営新宿線'], lineColors: [null] })] }),
     );
 
-    expect(entries[0].lines[0].color).toBe(DEFAULT_LINE_COLOR);
+    expect(entries[0]!.lines[0]!.color).toBe(DEFAULT_LINE_COLOR);
   });
 
   it('路線カラーが足りなくても路線名を落とさない', () => {
@@ -171,7 +171,7 @@ describe('transferEntries', () => {
       concourse({ connections: [connection({ lineNames: ['A線', 'B線'], lineColors: ['#111111'] })] }),
     );
 
-    expect(entries[0].lines).toEqual([
+    expect(entries[0]!.lines).toEqual([
       { name: 'A線', color: '#111111' },
       { name: 'B線', color: DEFAULT_LINE_COLOR },
     ]);

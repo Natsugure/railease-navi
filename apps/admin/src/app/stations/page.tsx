@@ -6,7 +6,7 @@ import {
   stations,
 } from '@furatora/database/schema';
 import { asc, eq } from 'drizzle-orm';
-import { LinkAnchor } from '@/components/LinkElements';
+import { LinkAnchor, LinkButton } from '@/components/LinkElements';
 import { Badge, Group, ScrollArea, Stack, Table, TableTbody, TableTd, TableTh, TableThead, TableTr, Text, Title } from '@mantine/core';
 
 export default async function StationsPage() {
@@ -49,7 +49,10 @@ export default async function StationsPage() {
 
   return (
     <div>
-      <Title order={2} mb="lg">駅</Title>
+      <Group justify="space-between" mb="lg">
+        <Title order={2}>駅</Title>
+        <LinkButton href="/stations/new">+ 新規</LinkButton>
+      </Group>
 
       <Stack gap="xl">
         {byOperator.map(({ operator, lines: opLines }) => (

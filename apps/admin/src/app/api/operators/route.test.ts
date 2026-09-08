@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
-import { GET, POST } from './route';
+import { POST } from './route';
 
 vi.mock('@furatora/database/client', () => ({
   db: {
@@ -12,48 +12,12 @@ vi.mock('@furatora/database/schema', () => ({
   operators: {},
 }));
 
-vi.mock('drizzle-orm', () => ({
-  asc: vi.fn(),
-}));
-
 const mockOperator = {
   id: '550e8400-e29b-41d4-a716-446655440000',
   name: 'JR東日本',
   odptOperatorId: null,
   displayPriority: 0,
 };
-
-describe('GET /api/operators', () => {
-  beforeEach(() => {
-    vi.clearAllMocks();
-  });
-
-  it('オペレーター一覧を返す', async () => {
-    const { db } = await import('@furatora/database/client');
-    const mockOrderBy = vi.fn().mockResolvedValue([mockOperator]);
-    const mockFrom = vi.fn().mockReturnValue({ orderBy: mockOrderBy });
-    (db.select as Mock).mockReturnValue({ from: mockFrom });
-
-    const response = await GET();
-    const data = await response.json();
-
-    expect(response.status).toBe(200);
-    expect(data).toEqual([mockOperator]);
-  });
-
-  it('DB例外が発生した場合は500を返す', async () => {
-    const { db } = await import('@furatora/database/client');
-    const mockOrderBy = vi.fn().mockRejectedValue(new Error('DB error'));
-    const mockFrom = vi.fn().mockReturnValue({ orderBy: mockOrderBy });
-    (db.select as Mock).mockReturnValue({ from: mockFrom });
-
-    const response = await GET();
-    const data = await response.json();
-
-    expect(response.status).toBe(500);
-    expect(data).toEqual({ error: 'Internal server error' });
-  });
-});
 
 describe('POST /api/operators', () => {
   beforeEach(() => {

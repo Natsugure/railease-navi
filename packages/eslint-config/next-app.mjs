@@ -65,11 +65,7 @@ export default defineConfig([
     },
     rules: {
       "@typescript-eslint/no-explicit-any": "error",
-      // apps/admin のクライアント側データ取得10件が違反する。いずれも
-      // Server Component から props で渡せば useEffect ごと不要になるため、
-      // 個別に void/await を足さず構造の是正で解消する（Issue #49）。
-      // 是正完了後に "error" へ戻すこと。
-      "@typescript-eslint/no-floating-promises": "warn",
+      "@typescript-eslint/no-floating-promises": "error",
     },
   },
 ]);

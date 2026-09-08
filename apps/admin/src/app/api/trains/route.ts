@@ -3,6 +3,7 @@ import { db } from '@furatora/database/client';
 import { trains, trainEquipments, trainCarStructures } from '@furatora/database/schema';
 import { asc } from 'drizzle-orm';
 import { trainSchema } from '@/features/train/schema';
+import { requireInserted } from '@/external/requireInserted';
 
 export async function GET() {
   try {
@@ -22,15 +23,17 @@ export async function POST(request: Request) {
     }
     const { name, operatorId, lineIds, carCount, carStructure, freeSpaces, prioritySeats } = parsed.data;
 
-    const [created] = await db
-      .insert(trains)
-      .values({
-        name,
-        operators: operatorId,
-        lines: lineIds,
-        carCount,
-      })
-      .returning();
+    const created = requireInserted(
+      await db
+        .insert(trains)
+        .values({
+          name,
+          operators: operatorId,
+          lines: lineIds,
+          carCount,
+        })
+        .returning()
+    );
 
     if (carStructure && carStructure.length > 0) {
       await db.insert(trainCarStructures).values(

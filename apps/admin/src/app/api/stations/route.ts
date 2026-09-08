@@ -1,70 +1,36 @@
 import { NextResponse } from 'next/server';
-import { db } from '@furatora/database/client';
-import { stations, stationLines, lines, stationConnections } from '@furatora/database/schema';
-import { asc, and, eq, isNotNull } from 'drizzle-orm';
+import { stationCreateSchema } from '@/features/station/schema';
+import { StationReferenceNotFoundError } from '@/features/station/ports';
+import { stationRepository } from '@/di';
 
-export async function GET(request: Request) {
+// 駅の新規作成（Issue #88）。既存の `PUT /api/stations/[stationId]` に相乗りさせず、
+// コレクションに対する POST として分ける。書き込みは `@/di` 経由の Repository
+// （stations + stationLines を1トランザクション）で行い、この層は
+// `@furatora/database` を import しない（ADR-0001。新規ファイルのため legacyExclusions
+// には載せない）。
+export async function POST(request: Request) {
   try {
-    const { searchParams } = new URL(request.url);
-    const lineId = searchParams.get('lineId');
-    const connectedFromStationId = searchParams.get('connectedFrom');
-
-    if (lineId && connectedFromStationId) {
-      return NextResponse.json({ error: 'Cannot specify both lineId and connectedFrom filters.' }, { status: 400 });
+    let body: unknown;
+    try {
+      body = await request.json();
+    } catch {
+      return NextResponse.json({ error: 'リクエストボディが不正な JSON です' }, { status: 400 });
     }
 
-    if (lineId) {
-      const result = await db
-        .select({
-          id: stations.id,
-          name: stations.name,
-          nameEn: stations.nameEn,
-          code: stations.code,
-          stationOrder: stationLines.stationOrder,
-        })
-        .from(stationLines)
-        .innerJoin(stations, eq(stationLines.stationId, stations.id))
-        .where(eq(stationLines.lineId, lineId))
-        .orderBy(asc(stationLines.stationOrder));
-      return NextResponse.json(result);
+    const parsed = stationCreateSchema.safeParse(body);
+    if (!parsed.success) {
+      return NextResponse.json({ error: parsed.error.issues }, { status: 400 });
     }
 
-    if (connectedFromStationId) {
-      // connectedRailwayId 列は廃止済み（ODPT 同期専用の列。ADR-0007 決定3）。
-      // 路線は stationLines 経由で解決する（ekidata は路線ごとに駅を割るため、
-      // 駅が決まればほぼ1路線に定まる。実測で複数路線を持つ駅は5件のみ）
-      const result = await db
-        .select({
-          id: stations.id,
-          name: stations.name,
-          code: stations.code,
-          lineId: lines.id,
-          lineName: lines.name,
-        })
-        .from(stationConnections)
-        .innerJoin(stations, eq(stationConnections.connectedStationId, stations.id))
-        .leftJoin(stationLines, eq(stationLines.stationId, stations.id))
-        .leftJoin(lines, eq(lines.id, stationLines.lineId))
-        .where(and(
-          eq(stationConnections.stationId, connectedFromStationId),
-          isNotNull(stationConnections.connectedStationId),
-        ))
-        .orderBy(asc(lines.name));
-      return NextResponse.json(result);
-    }
+    const station = await stationRepository.create(parsed.data);
 
-    const result = await db
-      .select({
-        id: stations.id,
-        name: stations.name,
-        nameEn: stations.nameEn,
-        code: stations.code,
-        operatorId: stations.operatorId,
-      })
-      .from(stations)
-      .orderBy(asc(stations.name));
-    return NextResponse.json(result);
-  } catch {
+    return NextResponse.json(station, { status: 201 });
+  } catch (err) {
+    // 存在しない事業者・路線・駅グループを指定した（FK 違反）。
+    // 入力形式は正しいがリソースが無いので 422。
+    if (err instanceof StationReferenceNotFoundError) {
+      return NextResponse.json({ error: err.message }, { status: 422 });
+    }
     return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
   }
 }

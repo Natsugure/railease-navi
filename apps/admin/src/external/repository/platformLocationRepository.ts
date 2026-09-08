@@ -9,6 +9,7 @@ import {
 import { eq, inArray } from 'drizzle-orm';
 import type { PlatformLocationInput } from '@/features/facility/schema';
 import type { PlatformLocationRepository, PlatformLocationRecord } from '@/features/facility/ports';
+import { requireInserted } from '@/external/requireInserted';
 
 // platformLocations → platformLocationCells → stationFacilities / facilityConnections
 // の複数テーブルにまたがる書き込みのため withTransaction で原子化する（ADR-0005）。
@@ -19,13 +20,15 @@ async function insertCellsAndFacilities(
   cells: PlatformLocationInput['cells']
 ) {
   for (const cell of cells) {
-    const [insertedCell] = await tx
-      .insert(platformLocationCells)
-      .values({
-        platformLocationId,
-        xPositionMeters: cell.xPositionMeters != null ? String(cell.xPositionMeters) : null,
-      })
-      .returning();
+    const insertedCell = requireInserted(
+      await tx
+        .insert(platformLocationCells)
+        .values({
+          platformLocationId,
+          xPositionMeters: cell.xPositionMeters != null ? String(cell.xPositionMeters) : null,
+        })
+        .returning()
+    );
 
     if (cell.facilities.length > 0) {
       await tx.insert(stationFacilities).values(
@@ -63,14 +66,16 @@ async function insertConnections(
 export const dbPlatformLocationRepository: PlatformLocationRepository = {
   async create(input) {
     return withTransaction(async (tx) => {
-      const [location] = await tx
-        .insert(platformLocations)
-        .values({
-          platformId: input.platformId,
-          exits: input.exits ?? null,
-          notes: input.notes ?? null,
-        })
-        .returning();
+      const location = requireInserted(
+        await tx
+          .insert(platformLocations)
+          .values({
+            platformId: input.platformId,
+            exits: input.exits ?? null,
+            notes: input.notes ?? null,
+          })
+          .returning()
+      );
 
       await insertCellsAndFacilities(tx, location.id, input.cells);
       await insertConnections(tx, location.id, input.connections);
@@ -143,23 +148,27 @@ export const dbPlatformLocationRepository: PlatformLocationRepository = {
       .where(eq(facilityConnections.platformLocationId, id));
 
     return withTransaction(async (tx) => {
-      const [duplicated] = await tx
-        .insert(platformLocations)
-        .values({
-          platformId: original.platformId,
-          exits: original.exits,
-          notes: original.notes,
-        })
-        .returning();
+      const duplicated = requireInserted(
+        await tx
+          .insert(platformLocations)
+          .values({
+            platformId: original.platformId,
+            exits: original.exits,
+            notes: original.notes,
+          })
+          .returning()
+      );
 
       for (const cell of originalCells) {
-        const [duplicatedCell] = await tx
-          .insert(platformLocationCells)
-          .values({
-            platformLocationId: duplicated.id,
-            xPositionMeters: cell.xPositionMeters,
-          })
-          .returning();
+        const duplicatedCell = requireInserted(
+          await tx
+            .insert(platformLocationCells)
+            .values({
+              platformLocationId: duplicated.id,
+              xPositionMeters: cell.xPositionMeters,
+            })
+            .returning()
+        );
 
         const cellFacilities = originalFacilities.filter((f) => f.platformLocationCellId === cell.id);
         if (cellFacilities.length > 0) {

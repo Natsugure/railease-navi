@@ -28,7 +28,7 @@ describe('doorCenterX', () => {
     expect(Math.max(...centers)).toBeLessThan(c.endMeters);
     // 先頭と末尾が号車の中心から等距離
     const mid = (c.startMeters + c.endMeters) / 2;
-    expect(mid - centers[0]).toBeCloseTo(centers[centers.length - 1] - mid);
+    expect(mid - centers[0]!).toBeCloseTo(centers[centers.length - 1]! - mid);
   });
 
   it('正順と反転はドア番号を反転させた関係になる', () => {

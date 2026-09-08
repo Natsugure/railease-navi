@@ -100,8 +100,10 @@ export const stationConnections = pgTable('station_connections', {
   updatedAt: timestamp('updated_at').defaultNow().$onUpdate(() => new Date()),
 }, (t) => [
   // 【(stationId, connectedStationId) は1行しか持たない】無いと同じ組が重複する。
-  // 現時点でこのテーブルへ INSERT するコードは無い（作成 API / UI は Issue #88）。
-  // 追加するときは、この制約を衝突対象にして冪等な upsert にすること
+  // 乗換接続は有向2行で持つ（読み取り側は stationId 一致で片方向しか見ない）。
+  // Admin からの作成（apps/admin/src/external/repository/stationConnectionRepository.ts。
+  // Issue #88）は (A→B) と (B→A) を1トランザクションで、この制約を衝突対象にした
+  // onConflictDoNothing で冪等に挿入する。削除も両方向を対で行う。
   unique('unique_station_connection').on(t.stationId, t.connectedStationId),
 ]);
 
@@ -294,6 +296,8 @@ export const stationGroups = pgTable('station_groups', {
 // unique_station_adjacency は (lineId, stationAId, stationBId) の順序に依存するので、
 // この表に書き込むコードは端点 UUID を昇順へ正規化してから INSERT すること。
 // これにより辺が逆向きに与えられても重複行にならない。
+// 正規化の実装は apps/admin/src/features/station-adjacency/domain/normalize.ts
+// （normalizeAdjacencyEndpoints）。Repository が INSERT 前に必ずこれを通す（Issue #88）。
 // 隣接を引く側は (stationAId = X OR stationBId = X) の両方を見ること。
 // 詳細は docs/domain/station-master-model.md「隣接」
 export const stationAdjacencies = pgTable('station_adjacencies', {

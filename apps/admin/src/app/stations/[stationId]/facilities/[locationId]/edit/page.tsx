@@ -1,16 +1,7 @@
 import { notFound } from 'next/navigation';
-import { db } from '@furatora/database/client';
-import {
-  stations,
-  platformLocations,
-  platformLocationCells,
-  stationFacilities,
-  facilityConnections,
-  platforms,
-} from '@furatora/database/schema';
-import { eq, inArray } from 'drizzle-orm';
 import { Title } from '@mantine/core';
 import { FacilityForm } from '@/features/facility/components/FacilityForm';
+import { facilityEditPageQuery } from '@/di';
 
 export default async function EditLocationPage({
   params,
@@ -18,74 +9,23 @@ export default async function EditLocationPage({
   params: Promise<{ stationId: string; locationId: string }>;
 }) {
   const { stationId, locationId } = await params;
+  const context = await facilityEditPageQuery.getEditContext(stationId, locationId);
 
-  const [station] = await db.select().from(stations).where(eq(stations.id, stationId));
-  if (!station) notFound();
-
-  // Verify the location belongs to this station's platforms
-  const stationPlatforms = await db
-    .select({ id: platforms.id })
-    .from(platforms)
-    .where(eq(platforms.stationId, stationId));
-
-  const platformIds = stationPlatforms.map(p => p.id);
-  if (platformIds.length === 0) notFound();
-
-  const [location] = await db
-    .select()
-    .from(platformLocations)
-    .where(eq(platformLocations.id, locationId));
-
-  if (!location || !platformIds.includes(location.platformId)) notFound();
-
-  const cells = await db
-    .select()
-    .from(platformLocationCells)
-    .where(eq(platformLocationCells.platformLocationId, locationId));
-
-  const facilities = cells.length > 0
-    ? await db
-        .select()
-        .from(stationFacilities)
-        .where(inArray(stationFacilities.platformLocationCellId, cells.map((c) => c.id)))
-    : [];
-
-  const connections = await db
-    .select()
-    .from(facilityConnections)
-    .where(eq(facilityConnections.platformLocationId, locationId));
+  if (!context?.location) notFound();
 
   return (
     <div>
-      <Title order={2} mb="lg">設備場所を編集 - {station.name}</Title>
+      <Title order={2} mb="lg">設備場所を編集 - {context.stationName}</Title>
+      {/* 同一ルートパターン内で locationId だけが変わる遷移では React が
+          コンポーネントを再利用し、前の場所の入力内容が残る。key で作り直す */}
       <FacilityForm
+        key={`${stationId}:${locationId}`}
         stationId={stationId}
         isEdit
-        initialData={{
-          id: location.id,
-          platformId: location.platformId,
-          exits: location.exits ?? '',
-          notes: location.notes ?? '',
-          cells: cells.map((cell) => ({
-            xPositionMeters: cell.xPositionMeters != null ? Number(cell.xPositionMeters) : null,
-            facilities: facilities
-              .filter((f) => f.platformLocationCellId === cell.id)
-              .map((f) => ({
-                typeCode: f.typeCode,
-                isWheelchairAccessible: f.isWheelchairAccessible ?? true,
-                isStrollerAccessible: f.isStrollerAccessible ?? true,
-                notes: f.notes ?? '',
-              })),
-          })),
-          connections: connections.map((c) => ({
-            stationId: c.connectedStationId,
-            connectedPlatformId: c.connectedPlatformId,
-            directionId: c.directionId,
-            exitLabel: c.exitLabel ?? '',
-            xRangeStart: c.xRangeStart != null ? Number(c.xRangeStart) : null,
-            xRangeEnd: c.xRangeEnd != null ? Number(c.xRangeEnd) : null,
-          })),
-        }}
+        initialData={context.location}
+        platforms={context.platforms}
+        facilityTypes={context.facilityTypes}
+        connectedStations={context.connectedStations}
       />
     </div>
   );

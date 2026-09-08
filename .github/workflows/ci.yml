@@ -1,0 +1,34 @@
+# PR ごとに lint・型チェック・テストを回す。
+# これまで型検査は Vercel の `next build` 頼みで、PR 上の保証が無かった（Issue #50）。
+# DB 接続は不要: Route Handler のテストは @furatora/database をモックしている。
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches: [main, develop]
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm run lint
+
+      # web/admin の typecheck は `next typegen` を前置している（package.json 参照）。
+      # `next-env.d.ts` と `.next/types/**` は .gitignore 対象で、tsconfig の include が
+      # それらを指すため、クリーンチェックアウトのままでは静的アセットや Route/Page の
+      # 型宣言が解決できない。typegen を外すとここが必ず落ちる。
+      - run: pnpm run typecheck
+
+      - run: pnpm run test

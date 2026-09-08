@@ -1,69 +1,20 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState, useEffect } from 'react';
+import { useMemo, useState } from 'react';
 import {
-  Button, Card, Checkbox, Collapse, Group, Loader, NativeSelect,
+  Button, Card, Checkbox, Collapse, Group, NativeSelect,
   NumberInput, Stack, Text, TextInput, Textarea, Title,
 } from '@mantine/core';
-
-type Platform = {
-  id: string;
-  platformNumber: string;
-  physicalLength: string;
-};
-
-type FacilityType = {
-  code: string;
-  name: string;
-};
-
-type ConnectedStation = {
-  id: string;
-  name: string;
-  code: string | null;
-  lineId: string | null;
-  lineName: string | null;
-}
-
-type Direction = {
-  id: string;
-  displayName: string;
-};
-
-type ConnectedStationPlatform = {
-  id: string;
-  platformNumber: string;
-};
-
-type Connection = {
-  stationId: string;
-  connectedPlatformId: string | null;
-  directionId: string | null;
-  exitLabel: string;
-  xRangeStart: number | null;
-  xRangeEnd: number | null;
-};
+import type {
+  FacilityPlatformOption, FacilityTypeOption, ConnectedStationOption, FacilityLocationDTO,
+} from '@/features/facility/ports';
 
 type FacilitySelection = {
   typeCode: string;
   isWheelchairAccessible: boolean;
   isStrollerAccessible: boolean;
   notes: string;
-};
-
-type CellData = {
-  xPositionMeters: number | null;
-  facilities: FacilitySelection[];
-};
-
-type LocationData = {
-  id?: string;
-  platformId: string;
-  exits: string;
-  notes: string;
-  cells: CellData[];
-  connections?: Connection[];
 };
 
 type CellState = {
@@ -83,89 +34,59 @@ type ConnectionRowState = {
 
 type Props = {
   stationId: string;
-  initialData?: LocationData;
+  initialData?: FacilityLocationDTO;
   isEdit?: boolean;
+  platforms: FacilityPlatformOption[];
+  facilityTypes: FacilityTypeOption[];
+  connectedStations: ConnectedStationOption[];
 };
 
-export function FacilityForm({ stationId, initialData, isEdit = false }: Props) {
+// 接続候補駅すべてを行として展開し、既存の接続があればその値を反映する。
+// 従来 useEffect の中でクライアント fetch 結果と組み合わせていた処理を、
+// props からの純粋な組み立てにした（#49）。
+function buildConnectionRows(
+  connectedStations: ConnectedStationOption[],
+  connections: FacilityLocationDTO['connections'] | undefined,
+): ConnectionRowState[] {
+  return connectedStations.map((station) => {
+    const existing = connections?.find((c) => c.stationId === station.id);
+    return {
+      stationId: station.id,
+      connectedPlatformId: existing?.connectedPlatformId ?? null,
+      directionId: existing?.directionId ?? null,
+      notes: existing?.exitLabel ?? '',
+      xRangeStart: existing?.xRangeStart ?? '',
+      xRangeEnd: existing?.xRangeEnd ?? '',
+      checked: !!existing,
+    };
+  });
+}
+
+export function FacilityForm({
+  stationId, initialData, isEdit = false, platforms, facilityTypes, connectedStations,
+}: Props) {
   const router = useRouter();
-  const [platforms, setPlatforms] = useState<Platform[]>([]);
-  const [facilityTypes, setFacilityTypes] = useState<FacilityType[]>([]);
-  const [connectedStations, setConnectedStations] = useState<ConnectedStation[]>([]);
-  const [connectedStationPlatforms, setConnectedStationPlatforms] = useState<Record<string, ConnectedStationPlatform[]>>({});
-  const [connectedStationDirections, setConnectedStationDirections] = useState<Record<string, Direction[]>>({});
-  const [dataLoading, setDataLoading] = useState(true);
 
   const [platformId, setPlatformId] = useState(initialData?.platformId ?? '');
   const [exits, setExits] = useState(initialData?.exits ?? '');
   const [notes, setNotes] = useState(initialData?.notes ?? '');
   const [cells, setCells] = useState<CellState[]>(
-    initialData?.cells.map((c) => ({
-      xPositionMeters: c.xPositionMeters ?? '',
-      facilities: c.facilities,
-    })) ?? [{ xPositionMeters: '', facilities: [] }]
+    () =>
+      initialData?.cells.map((c) => ({
+        xPositionMeters: c.xPositionMeters ?? '',
+        facilities: c.facilities,
+      })) ?? [{ xPositionMeters: '', facilities: [] }]
   );
-  const [connectionRows, setConnectionRows] = useState<ConnectionRowState[]>([]);
+  const [connectionRows, setConnectionRows] = useState<ConnectionRowState[]>(
+    () => buildConnectionRows(connectedStations, initialData?.connections)
+  );
   const [submitting, setSubmitting] = useState(false);
 
-  useEffect(() => {
-    Promise.all([
-      fetch(`/api/stations/${stationId}/platforms`).then((r) => r.json()),
-      fetch('/api/facility-types').then((r) => r.json()),
-      fetch(`/api/stations?connectedFrom=${stationId}`).then((r) => r.json()),
-    ]).then(([platformsData, typesData, stationsData]: [
-      Platform[],
-      FacilityType[],
-      ConnectedStation[],
-    ]) => {
-      setPlatforms(platformsData);
-      setFacilityTypes(typesData);
-      setConnectedStations(stationsData);
-
-      // 全接続候補駅のプラットフォーム・方面を一括ロード
-      if (stationsData.length > 0) {
-        Promise.all(
-          stationsData.map((station) =>
-            Promise.all([
-              fetch(`/api/stations/${station.id}/platforms`).then((r) => r.json()),
-              fetch(`/api/stations/${station.id}/directions`).then((r) => r.json()),
-            ]).then(([stPlatforms, stDirections]: [ConnectedStationPlatform[], Direction[]]) => ({
-              id: station.id,
-              stPlatforms,
-              stDirections,
-            }))
-          )
-        ).then((results) => {
-          const newPlatforms: Record<string, ConnectedStationPlatform[]> = {};
-          const newDirections: Record<string, Direction[]> = {};
-          for (const { id, stPlatforms, stDirections } of results) {
-            newPlatforms[id] = stPlatforms;
-            newDirections[id] = stDirections;
-          }
-          setConnectedStationPlatforms(newPlatforms);
-          setConnectedStationDirections(newDirections);
-        });
-      }
-
-      // connectionRows を接続候補全駅で初期化（編集時は既存データを反映）
-      setConnectionRows(
-        stationsData.map((station) => {
-          const existing = initialData?.connections?.find((c) => c.stationId === station.id);
-          return {
-            stationId: station.id,
-            connectedPlatformId: existing?.connectedPlatformId ?? null,
-            directionId: existing?.directionId ?? null,
-            notes: existing?.exitLabel ?? '',
-            xRangeStart: existing?.xRangeStart ?? '',
-            xRangeEnd: existing?.xRangeEnd ?? '',
-            checked: !!existing,
-          };
-        })
-      );
-
-      setDataLoading(false);
-    });
-  }, [stationId, initialData?.connections]);
+  // 行ごとに connectedStations を線形探索しないための索引
+  const stationById = useMemo(
+    () => new Map(connectedStations.map((s) => [s.id, s])),
+    [connectedStations]
+  );
 
   function addCell() {
     setCells((prev) => [...prev, { xPositionMeters: '', facilities: [] }]);
@@ -279,10 +200,6 @@ export function FacilityForm({ stationId, initialData, isEdit = false }: Props) 
       setSubmitting(false);
       alert('保存に失敗しました');
     }
-  }
-
-  if (dataLoading) {
-    return <Loader />;
   }
 
   const selectedPlatform = platforms.find((p) => p.id === platformId);
@@ -427,12 +344,12 @@ export function FacilityForm({ stationId, initialData, isEdit = false }: Props) 
           )}
           <Stack gap={0} bg="white" style={{ border: '1px solid var(--mantine-color-gray-3)', borderRadius: 'var(--mantine-radius-sm)' }}>
             {connectionRows.map((row, i) => {
-              const station = connectedStations.find((s) => s.id === row.stationId);
-              const stationPlatforms = connectedStationPlatforms[row.stationId] ?? [];
-              const stationDirections = connectedStationDirections[row.stationId] ?? [];
-              const lineLabel = station
-                ? (station.lineName ?? '(路線不明)')
-                : '(読込中)';
+              const station = stationById.get(row.stationId);
+              const stationPlatforms = station?.platforms ?? [];
+              const stationDirections = station?.directions ?? [];
+              const lineLabel = station && station.lines.length > 0
+                ? station.lines.map((l) => l.name).join(' / ')
+                : '(路線不明)';
               const stationLabel = station ? station.name : row.stationId;
               return (
                 <div

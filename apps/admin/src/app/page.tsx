@@ -10,12 +10,14 @@ async function fetchCounts() {
   const [trainCount] = await db.select({ count: count() }).from(trains);
   const [facilityCount] = await db.select({ count: count() }).from(stationFacilities);
 
+  // count() は必ず1行返るが noUncheckedIndexedAccess 下では T | undefined になる。
+  // external/query/stationPublishingPageQuery.ts と同じく ?? 0 で受ける
   return {
-    operators: operatorCount.count,
-    lines: lineCount.count,
-    stations: stationCount.count,
-    trains: trainCount.count,
-    facilities: facilityCount.count,
+    operators: operatorCount?.count ?? 0,
+    lines: lineCount?.count ?? 0,
+    stations: stationCount?.count ?? 0,
+    trains: trainCount?.count ?? 0,
+    facilities: facilityCount?.count ?? 0,
   };
 }
 

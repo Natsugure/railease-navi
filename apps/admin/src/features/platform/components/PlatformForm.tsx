@@ -1,18 +1,11 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
-  Button, Group, Loader, NativeSelect, NumberInput, Stack, Text, TextInput, Textarea,
+  Button, Group, NativeSelect, NumberInput, Stack, Text, TextInput, Textarea,
 } from '@mantine/core';
-
-type Line = { id: string; name: string };
-type LineDirection = {
-  id: string;
-  directionType: string;
-  displayName: string;
-  representativeStationId: string;
-};
+import type { LineWithDirections } from '@/features/platform/ports';
 
 type PlatformData = {
   id?: string;
@@ -29,12 +22,11 @@ type Props = {
   stationId: string;
   initialData?: PlatformData;
   isEdit?: boolean;
+  lines: LineWithDirections[];
 };
 
-export function PlatformForm({ stationId, initialData, isEdit = false }: Props) {
+export function PlatformForm({ stationId, initialData, isEdit = false, lines }: Props) {
   const router = useRouter();
-  const [lines, setLines] = useState<Line[]>([]);
-  const [directions, setDirections] = useState<LineDirection[]>([]);
   const [platformNumber, setPlatformNumber] = useState(initialData?.platformNumber ?? '');
   const [lineId, setLineId] = useState(initialData?.lineId ?? '');
   const [inboundDirectionId, setInboundDirectionId] = useState<string>(
@@ -48,28 +40,8 @@ export function PlatformForm({ stationId, initialData, isEdit = false }: Props) 
     initialData?.platformSide ?? ''
   );
   const [notes, setNotes] = useState(initialData?.notes ?? '');
-  const [linesLoading, setLinesLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-
-  useEffect(() => {
-    fetch('/api/lines')
-      .then((r) => r.json())
-      .then((data) => {
-        setLines(data);
-        setLinesLoading(false);
-      });
-  }, []);
-
-  useEffect(() => {
-    if (!lineId) {
-      Promise.resolve().then(() => setDirections([]));
-      return;
-    }
-    fetch(`/api/lines/${lineId}/directions`)
-      .then((r) => r.json())
-      .then(setDirections);
-  }, [lineId]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -115,8 +87,11 @@ export function PlatformForm({ stationId, initialData, isEdit = false }: Props) 
     }
   }
 
-  const inboundDirections = directions.filter((d) => d.directionType === 'inbound');
-  const outboundDirections = directions.filter((d) => d.directionType === 'outbound');
+  // 方面は選択中の路線からの純粋な派生値（props で全路線ぶんネストされて渡る）。
+  // 路線切替時の fetch とレースが不要になった（#49 / #32）
+  const selectedLine = lines.find((l) => l.id === lineId);
+  const inboundDirections = selectedLine?.inboundDirections ?? [];
+  const outboundDirections = selectedLine?.outboundDirections ?? [];
 
   const lineSelectData = [
     { value: '', label: '路線を選択' },
@@ -135,12 +110,7 @@ export function PlatformForm({ stationId, initialData, isEdit = false }: Props) 
           w={{ base: '100%', xs: 128 }}
         />
 
-        {linesLoading ? (
-          <Group gap="xs" align="center">
-            <Loader size="sm" />
-            <Text size="sm" c="dimmed">路線を読み込み中...</Text>
-          </Group>
-        ) : (
+        <div>
           <NativeSelect
             label="路線"
             data={lineSelectData}
@@ -152,7 +122,14 @@ export function PlatformForm({ stationId, initialData, isEdit = false }: Props) 
             }}
             required
           />
-        )}
+          {/* 選択肢はこの駅の stationLines に載る路線だけ。0件だと理由が分からないまま
+              required で詰まるので、原因を示す */}
+          {lines.length === 0 && (
+            <Text size="xs" c="dimmed" mt={4}>
+              この駅に紐づく路線が登録されていません。先に駅と路線の対応を登録してください。
+            </Text>
+          )}
+        </div>
 
         {lineId && (
           <>

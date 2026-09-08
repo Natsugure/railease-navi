@@ -3,7 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "seed": "tsx --env-file-if-exists=.env src/seed-master-data.ts"
+    "seed": "tsx --env-file-if-exists=.env src/seed-master-data.ts",
+    "typecheck": "tsc --noEmit"
   },
   "dependencies": {
     "@furatora/database": "workspace:*",

@@ -152,8 +152,9 @@ function buildGroup(
   const transfers = transferEntries(concourse);
   if (exit === null && transfers.length === 0) return null;
 
-  const bracketStartX = tickXs[0];
-  const bracketEndX = tickXs[tickXs.length - 1];
+  // 直上の length === 0 ガードにより両端は必ず存在する
+  const bracketStartX = tickXs[0]!;
+  const bracketEndX = tickXs[tickXs.length - 1]!;
   const anchorX = (bracketStartX + bracketEndX) / 2;
 
   const estWidthPx = estimatePlateWidth(exit, transfers);

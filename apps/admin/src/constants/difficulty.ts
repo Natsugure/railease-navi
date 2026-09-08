@@ -20,3 +20,17 @@ export const WHEELCHAIR_DIFFICULTY_META = {
   discouraged: { order: 4, label: '車いすでの乗り換えは可能だが、非合理的で推奨できない' },
   inaccessible: { order: 5, label: 'バリアフリールートが全く整備されていない' },
 } as const satisfies Record<WheelchairDifficulty, DifficultyMeta>;
+
+// NativeSelect 用の選択肢。META を order 昇順に並べ、先頭に空値（未設定）を置く。
+// 難易度セレクトを出すフォーム（StationEditForm / StationConnectionCreateForm）で共有する。
+function toDifficultyOptions(meta: Record<string, DifficultyMeta>): { value: string; label: string }[] {
+  return [
+    { value: '', label: '— 未設定 —' },
+    ...Object.entries(meta)
+      .sort(([, a], [, b]) => a.order - b.order)
+      .map(([key, { label }]) => ({ value: key, label })),
+  ];
+}
+
+export const strollerDifficultyOptions = toDifficultyOptions(STROLLER_DIFFICULTY_META);
+export const wheelchairDifficultyOptions = toDifficultyOptions(WHEELCHAIR_DIFFICULTY_META);

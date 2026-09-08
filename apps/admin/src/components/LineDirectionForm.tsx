@@ -1,18 +1,12 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import {
-  Button, Checkbox, Group, Loader, NativeSelect, ScrollArea,
+  Button, Checkbox, Group, NativeSelect, ScrollArea,
   Stack, Text, TextInput, Textarea,
 } from '@mantine/core';
-
-type Station = {
-  id: string;
-  name: string;
-  nameEn: string | null;
-  code: string | null;
-};
+import type { DirectionStationOption } from '@/features/line/ports';
 
 type LineDirectionData = {
   id?: string;
@@ -28,15 +22,15 @@ type Props = {
   lineId: string;
   initialData?: LineDirectionData;
   isEdit?: boolean;
+  stations: DirectionStationOption[];
 };
 
-function stationLabel(s: Station) {
+function stationLabel(s: DirectionStationOption) {
   return `${s.name}${s.nameEn ? ` (${s.nameEn})` : ''}${s.code ? ` [${s.code}]` : ''}`;
 }
 
-export function LineDirectionForm({ lineId, initialData, isEdit = false }: Props) {
+export function LineDirectionForm({ lineId, initialData, isEdit = false, stations }: Props) {
   const router = useRouter();
-  const [stations, setStations] = useState<Station[]>([]);
   const [directionType, setDirectionType] = useState(initialData?.directionType ?? 'inbound');
   const [representativeStationId, setRepresentativeStationId] = useState(
     initialData?.representativeStationId ?? ''
@@ -47,18 +41,7 @@ export function LineDirectionForm({ lineId, initialData, isEdit = false }: Props
     initialData?.terminalStationIds ?? []
   );
   const [notes, setNotes] = useState(initialData?.notes ?? '');
-  const [loadedLineId, setLoadedLineId] = useState<string | null>(null);
-  const stationsLoading = loadedLineId !== lineId;
   const [submitting, setSubmitting] = useState(false);
-
-  useEffect(() => {
-    fetch(`/api/stations?lineId=${lineId}`)
-      .then((r) => r.json())
-      .then((data) => {
-        setStations(data);
-        setLoadedLineId(lineId);
-      });
-  }, [lineId]);
 
   function toggleTerminalStation(stationId: string) {
     setTerminalStationIds((prev) =>
@@ -148,23 +131,16 @@ export function LineDirectionForm({ lineId, initialData, isEdit = false }: Props
             この方面の終点となりうる駅を選択してください
           </Text>
           <ScrollArea.Autosize mah={240} type="auto" offsetScrollbars>
-            {stationsLoading ? (
-              <Group gap="xs" align="center">
-                <Loader size="sm" />
-                <Text size="sm" c="dimmed">駅を読み込み中...</Text>
-              </Group>
-            ) : (
-              <Stack gap="xs">
-                {stations.map((station) => (
-                  <Checkbox
-                    key={station.id}
-                    label={stationLabel(station)}
-                    checked={terminalStationIds.includes(station.id)}
-                    onChange={() => toggleTerminalStation(station.id)}
-                  />
-                ))}
-              </Stack>
-            )}
+            <Stack gap="xs">
+              {stations.map((station) => (
+                <Checkbox
+                  key={station.id}
+                  label={stationLabel(station)}
+                  checked={terminalStationIds.includes(station.id)}
+                  onChange={() => toggleTerminalStation(station.id)}
+                />
+              ))}
+            </Stack>
           </ScrollArea.Autosize>
         </div>
 

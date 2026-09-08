@@ -25,7 +25,10 @@ export function TransferDifficultySection({ connections }: Props) {
 
   if (connections.length === 0) return null;
 
-  const selected = connections[selectedIndex];
+  // connections が縮んで selectedIndex が範囲外になっても先頭にフォールバックする
+  const selected = connections[selectedIndex] ?? connections[0];
+  if (!selected) return null;
+
   const strollerMeta = selected.strollerDifficulty
     ? STROLLER_DIFFICULTY_META[selected.strollerDifficulty]
     : null;
