@@ -46,36 +46,22 @@ export function LineForm({ lineId, initialData, operators }: Props) {
     setSubmitting(true);
 
     const orderValue = typeof displayOrder === 'number' ? displayOrder : 0;
-    const res = isEdit
-      ? await fetch(`/api/lines/${lineId}`, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name,
-            nameKana: nameKana || null,
-            nameEn: nameEn || null,
-            odptRailwayId: odptRailwayId || null,
-            slug: slug || null,
-            lineCode: lineCode || null,
-            color: color || null,
-            displayOrder: orderValue,
-            operatorId,
-          }),
-        })
-      : await fetch('/api/lines', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            name,
-            operatorId,
-            nameKana: nameKana || null,
-            nameEn: nameEn || null,
-            odptRailwayId: odptRailwayId || null,
-            lineCode: lineCode || null,
-            color: color || null,
-            displayOrder: orderValue,
-          }),
-        });
+    // slug は編集時のみ送る（新規作成では公開操作の周辺で確定するため body に含めない）。
+    const res = await fetch(isEdit ? `/api/lines/${lineId}` : '/api/lines', {
+      method: isEdit ? 'PUT' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        name,
+        operatorId,
+        nameKana: nameKana || null,
+        nameEn: nameEn || null,
+        odptRailwayId: odptRailwayId || null,
+        lineCode: lineCode || null,
+        color: color || null,
+        displayOrder: orderValue,
+        ...(isEdit ? { slug: slug || null } : {}),
+      }),
+    });
 
     if (res.ok) {
       router.push('/lines');

@@ -9,9 +9,9 @@ export default async function NewStationPage({
 }) {
   const { prefCode: prefCodeParam } = await searchParams;
   const parsed = prefCodeParam === undefined ? NaN : Number(prefCodeParam);
-  const prefCode = Number.isInteger(parsed) ? parsed : null;
+  const prefCode = Number.isInteger(parsed) ? parsed : undefined;
 
-  const context = await stationCreatePageQuery.getCreateContext(prefCode ?? undefined);
+  const context = await stationCreatePageQuery.getCreateContext(prefCode);
 
   return (
     <div>
@@ -20,7 +20,7 @@ export default async function NewStationPage({
         operators={context.operators}
         lines={context.lines}
         stationGroups={context.stationGroups}
-        prefCode={prefCode}
+        prefCode={prefCode ?? null}
       />
     </div>
   );

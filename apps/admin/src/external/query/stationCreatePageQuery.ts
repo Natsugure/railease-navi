@@ -1,9 +1,7 @@
 import { db } from '@furatora/database/client';
 import { operators, lines, stationGroups } from '@furatora/database/schema';
 import { asc, eq } from 'drizzle-orm';
-import type {
-  StationCreatePageQuery, StationCreateContext,
-} from '@/features/station/ports';
+import type { StationCreatePageQuery } from '@/features/station/ports';
 
 // admin 全体の Query Service 化は #48。ここは駅の新規作成（#88）で追加。
 //
@@ -12,7 +10,9 @@ import type {
 // 都道府県が選ばれたときだけ、その都道府県ぶんを返す（全件は返さない）。
 export const dbStationCreatePageQuery: StationCreatePageQuery = {
   async getCreateContext(prefCode) {
-    const [operatorOptions, lineOptions] = await Promise.all([
+    // 3クエリは互いに独立なので1度に投げる。乗換単位グループ（8,782件）は
+    // prefCode 指定時だけ、その都道府県ぶんを取得する（全件は返さない）。
+    const [operatorOptions, lineOptions, groupOptions] = await Promise.all([
       db
         .select({ id: operators.id, name: operators.name })
         .from(operators)
@@ -21,12 +21,9 @@ export const dbStationCreatePageQuery: StationCreatePageQuery = {
         .select({ id: lines.id, name: lines.name, operatorId: lines.operatorId })
         .from(lines)
         .orderBy(asc(lines.displayOrder)),
-    ]);
-
-    const groupOptions =
       prefCode === undefined
-        ? []
-        : await db
+        ? Promise.resolve([])
+        : db
             .select({
               id: stationGroups.id,
               name: stationGroups.name,
@@ -34,13 +31,13 @@ export const dbStationCreatePageQuery: StationCreatePageQuery = {
             })
             .from(stationGroups)
             .where(eq(stationGroups.prefCode, prefCode))
-            .orderBy(asc(stationGroups.name));
+            .orderBy(asc(stationGroups.name)),
+    ]);
 
-    const context: StationCreateContext = {
+    return {
       operators: operatorOptions,
       lines: lineOptions,
       stationGroups: groupOptions,
     };
-    return context;
   },
 };

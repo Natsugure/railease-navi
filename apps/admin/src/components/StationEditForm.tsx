@@ -3,7 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import type { StrollerDifficulty, WheelchairDifficulty } from '@furatora/database/enums';
-import { STROLLER_DIFFICULTY_META, WHEELCHAIR_DIFFICULTY_META } from '@/constants/difficulty';
+import { strollerDifficultyOptions, wheelchairDifficultyOptions } from '@/constants/difficulty';
 import type { ConnectionRow, OperatorOption } from '@/features/station/ports';
 import { DeleteButton } from '@/components/DeleteButton';
 import { LinkAnchor } from '@/components/LinkElements';
@@ -51,20 +51,6 @@ function displayName(conn: ConnectionRow): string {
   if (conn.connectedStationName) return conn.connectedStationName;
   return '(不明)';
 }
-
-const strollerOptions = [
-  { value: '', label: '— 未設定 —' },
-  ...Object.entries(STROLLER_DIFFICULTY_META)
-    .sort(([, a], [, b]) => a.order - b.order)
-    .map(([key, { label }]) => ({ value: key, label })),
-];
-
-const wheelchairOptions = [
-  { value: '', label: '— 未設定 —' },
-  ...Object.entries(WHEELCHAIR_DIFFICULTY_META)
-    .sort(([, a], [, b]) => a.order - b.order)
-    .map(([key, { label }]) => ({ value: key, label })),
-];
 
 export function StationEditForm({ stationId, initialData, connections, operators }: Props) {
   const router = useRouter();
@@ -243,7 +229,7 @@ export function StationEditForm({ stationId, initialData, connections, operators
                   <SimpleGrid cols={2} mb="md">
                     <NativeSelect
                       label="ベビーカー難易度"
-                      data={strollerOptions}
+                      data={strollerDifficultyOptions}
                       value={s.strollerDifficulty}
                       onChange={(e) =>
                         updateConnection(conn.id, {
@@ -253,7 +239,7 @@ export function StationEditForm({ stationId, initialData, connections, operators
                     />
                     <NativeSelect
                       label="車いす難易度"
-                      data={wheelchairOptions}
+                      data={wheelchairDifficultyOptions}
                       value={s.wheelchairDifficulty}
                       onChange={(e) =>
                         updateConnection(conn.id, {

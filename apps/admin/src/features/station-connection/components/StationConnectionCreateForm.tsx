@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button, Group, NativeSelect, Stack, Text, Textarea } from '@mantine/core';
-import { STROLLER_DIFFICULTY_META, WHEELCHAIR_DIFFICULTY_META } from '@/constants/difficulty';
+import { strollerDifficultyOptions, wheelchairDifficultyOptions } from '@/constants/difficulty';
 import type {
   ConnectionCandidateStation, StationConnectionCreateContext,
 } from '@/features/station-connection/ports';
@@ -17,20 +17,6 @@ type Props = {
   lineId: string;
   context: StationConnectionCreateContext;
 };
-
-const strollerOptions = [
-  { value: '', label: '— 未設定 —' },
-  ...Object.entries(STROLLER_DIFFICULTY_META)
-    .sort(([, a], [, b]) => a.order - b.order)
-    .map(([key, { label }]) => ({ value: key, label })),
-];
-
-const wheelchairOptions = [
-  { value: '', label: '— 未設定 —' },
-  ...Object.entries(WHEELCHAIR_DIFFICULTY_META)
-    .sort(([, a], [, b]) => a.order - b.order)
-    .map(([key, { label }]) => ({ value: key, label })),
-];
 
 function candidateLabel(s: ConnectionCandidateStation): string {
   return s.code ? `${s.name}（${s.code}）` : s.name;
@@ -130,7 +116,7 @@ export function StationConnectionCreateForm({ stationId, operatorId, lineId, con
           label="ベビーカーの乗換難易度 - 任意"
           value={strollerDifficulty}
           onChange={(e) => setStrollerDifficulty(e.target.value)}
-          data={strollerOptions}
+          data={strollerDifficultyOptions}
         />
         <Textarea
           label="ベビーカーの補足 - 任意"
@@ -143,7 +129,7 @@ export function StationConnectionCreateForm({ stationId, operatorId, lineId, con
           label="車いすの乗換難易度 - 任意"
           value={wheelchairDifficulty}
           onChange={(e) => setWheelchairDifficulty(e.target.value)}
-          data={wheelchairOptions}
+          data={wheelchairDifficultyOptions}
         />
         <Textarea
           label="車いすの補足 - 任意"

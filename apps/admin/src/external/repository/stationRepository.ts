@@ -5,29 +5,11 @@ import {
   type StationRepository,
 } from '@/features/station/ports';
 import { requireInserted } from '@/external/requireInserted';
+import { isPgErrorCode, PG_FOREIGN_KEY_VIOLATION } from '@/external/pgError';
 
-// PostgreSQL の外部キー制約違反（foreign_key_violation）。
 // zod で uuid 形式は検証済みだが、存在しない operatorId / lineId / stationGroupId が
-// 渡されると DB で 23503 になる。route.ts が 422 に写像できるよう専用エラーに変換する。
-//
-// 【判定方法】stationPublishingRepository.ts の isUniqueViolation と同じ。
-// withTransaction（neon-serverless）経由の失敗は DrizzleQueryError でラップされ、
-// 実際の pg エラーコードは err.code ではなく err.cause.code に入る（同ファイルの実測コメント）。
-const FOREIGN_KEY_VIOLATION_CODE = '23503';
-
-function getErrorCode(err: unknown): unknown {
-  return typeof err === 'object' && err !== null && 'code' in err
-    ? (err as { code: unknown }).code
-    : undefined;
-}
-
-function isForeignKeyViolation(err: unknown): boolean {
-  if (getErrorCode(err) === FOREIGN_KEY_VIOLATION_CODE) return true;
-  const cause = typeof err === 'object' && err !== null && 'cause' in err
-    ? (err as { cause: unknown }).cause
-    : undefined;
-  return getErrorCode(cause) === FOREIGN_KEY_VIOLATION_CODE;
-}
+// 渡されると DB で外部キー制約違反（23503）になる。route.ts が 422 に写像できるよう
+// 専用エラーに変換する。ラップされた cause 展開の詳細は external/pgError.ts を見る。
 
 // stations と stationLines の2テーブルへ書くため withTransaction を使う（ADR-0005）。
 // stations の id は DB 側で採番されるため、親を INSERT → 返却 id で子を INSERT の順。
@@ -63,7 +45,7 @@ export const dbStationRepository: StationRepository = {
         return created;
       });
     } catch (err) {
-      if (isForeignKeyViolation(err)) {
+      if (isPgErrorCode(err, PG_FOREIGN_KEY_VIOLATION)) {
         throw new StationReferenceNotFoundError();
       }
       throw err;

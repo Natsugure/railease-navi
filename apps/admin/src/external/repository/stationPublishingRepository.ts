@@ -7,32 +7,13 @@ import {
   SlugTakenError,
   type StationPublishingRepository,
 } from '@/features/station-publishing/ports';
+import { isPgErrorCode, PG_UNIQUE_VIOLATION } from '@/external/pgError';
 
-// PostgreSQL の一意制約違反（unique_violation）。
+// slug の一意制約違反（23505）は SlugTakenError に写像し、route.ts が 409 を返す。
+// これを取りこぼすと 500 になる。ラップされた cause 展開の詳細は external/pgError.ts。
 //
-// 【stopPatternRepository.ts の isUniqueViolation とは判定方法が異なる】
-// 実測（rehearsalブランチでの検証）で、drizzle-orm 0.45.1 は withTransaction
-// 経由の失敗を DrizzleQueryError でラップし、実際の pg エラー（code: '23505'）は
-// トップレベルの `err.code` ではなく `err.cause.code` に入ることを確認した。
-// `err.code` だけを見る判定は 23505 を検知できず、SlugTakenError に写像されずに
-// route.ts の catch を素通りして 500 になる（本来は 409 であるべき）。
-// 同種の判定を持つ他の Repository（stopPatternRepository 等）も同じ問題を
-// 抱えている可能性があるため、後続で確認する（このPRのスコープ外）。
-const UNIQUE_VIOLATION_CODE = '23505';
-
-function getErrorCode(err: unknown): unknown {
-  return typeof err === 'object' && err !== null && 'code' in err
-    ? (err as { code: unknown }).code
-    : undefined;
-}
-
-function isUniqueViolation(err: unknown): boolean {
-  if (getErrorCode(err) === UNIQUE_VIOLATION_CODE) return true;
-  const cause = typeof err === 'object' && err !== null && 'cause' in err
-    ? (err as { cause: unknown }).cause
-    : undefined;
-  return getErrorCode(cause) === UNIQUE_VIOLATION_CODE;
-}
+// 【注意】stopPatternRepository.ts の isUniqueViolation は err.code しか見ておらず、
+// withTransaction 経由でラップされたケースを取りこぼす。統一は別 Issue。
 
 // 駅が属する路線の slug を読む。stationLines が複数路線を持つ場合（実測5駅）は
 // 「slug を持つ路線」を優先して1件返す（slug NULLS LAST、同順位は lines.id で確定）。
@@ -85,7 +66,7 @@ export const dbStationPublishingRepository: StationPublishingRepository = {
         return !!updated;
       });
     } catch (err) {
-      if (isUniqueViolation(err)) {
+      if (isPgErrorCode(err, PG_UNIQUE_VIOLATION)) {
         throw new SlugTakenError();
       }
       throw err;
