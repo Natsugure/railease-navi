@@ -29,6 +29,11 @@ export function StationListToolbar({ current, defaults, operatorId, lineId, q, o
   const [searchInput, setSearchInput] = useState(q);
   const [debounced] = useDebouncedValue(searchInput, 400);
 
+  // ブラウザの戻る/進むなど、自分の入力以外の経路で q が変わったら入力欄に反映する。
+  useEffect(() => {
+    setSearchInput(q);
+  }, [q]);
+
   useEffect(() => {
     if (debounced === q) return;
     router.replace(

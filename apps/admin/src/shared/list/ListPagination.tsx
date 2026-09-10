@@ -21,8 +21,10 @@ export function ListPagination({ total, page, perPage, basePath, current, defaul
   const totalPages = Math.max(1, Math.ceil(total / perPage));
   if (total === 0) return null;
 
-  const rangeStart = (page - 1) * perPage + 1;
-  const rangeEnd = Math.min(total, page * perPage);
+  // page がURL操作等で総ページ数の範囲外になっていても、表示上は範囲内にクランプする。
+  const currentPage = Math.min(Math.max(page, 1), totalPages);
+  const rangeStart = (currentPage - 1) * perPage + 1;
+  const rangeEnd = Math.min(total, currentPage * perPage);
 
   return (
     <Group justify="space-between" mt="md">
@@ -32,7 +34,7 @@ export function ListPagination({ total, page, perPage, basePath, current, defaul
       {totalPages > 1 && (
         <Pagination
           total={totalPages}
-          value={page}
+          value={currentPage}
           onChange={(next) => router.push(
             buildListHref(basePath, current, { page: next }, { defaults: { ...defaults, page: 1 } }),
           )}
