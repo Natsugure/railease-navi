@@ -5,6 +5,8 @@
 // 書き込み: Repository（ADR-0003）。路線の新規作成（#88）で追加。
 // この feature は schema.ts を持つ（`lineCreateSchema`）。domain/ は持たない。
 
+import type { ListParams, ListResult } from '@/shared/list/params';
+import type { OperatorCard } from '@/shared/list/operatorCard';
 import type { LineCreateInput } from './schema';
 
 export type OperatorOption = { id: string; name: string };
@@ -81,4 +83,45 @@ export interface LineDirectionEditPageQuery {
   getCreateContext(lineId: string): Promise<LineDirectionEditContext | null>;
   // 路線・方面が無い、または方面が別路線のものなら null
   getEditContext(lineId: string, directionId: string): Promise<LineDirectionEditContext | null>;
+}
+
+// --- 一覧ページ（#94）---
+//
+// 駅一覧（features/station/ports.ts の StationList*）と同じ契約に従う
+// （ADR-0009）。事業者スコープ化・検索・並び替え・ページングはすべて
+// サーバー側（SQL の WHERE / ORDER BY / LIMIT OFFSET）で行い、URL クエリを
+// 唯一の状態源とする。並び替えキーは画面固有の文字列 union にし、SQL の
+// 列参照や asc()/desc() をこの port に持ち込まない。
+//
+// 駅一覧と異なり、路線一覧に「路線スコープ」は無い（一覧そのものが路線の
+// 集合のため）。スコープは事業者のみ。
+
+export type LineListSort = 'displayOrder' | 'name' | 'lineCode' | 'operator';
+export const LINE_LIST_SORT_KEYS: readonly LineListSort[] = ['displayOrder', 'name', 'lineCode', 'operator'];
+
+export type LineListScope = { operatorId?: string };
+
+export type LineListRow = {
+  id: string;
+  name: string;
+  lineCode: string | null;
+  color: string | null;
+  operatorName: string;
+  // 当該路線に属する駅の数（stationLines の件数）
+  stationCount: number;
+};
+
+export type LineListContext = {
+  // 常に返す（事業者セレクトの選択肢。162件）
+  operators: OperatorOption[];
+  // スコープも検索語も無いときだけ返す（空状態のカード一覧）
+  operatorCards: OperatorCard[];
+  // 選択中スコープの表示名（見出し用。無ければ null）
+  scope: { operatorName: string | null };
+  // スコープも検索語も無いときは null（一覧・件数のクエリを発行しない。受け入れ基準）
+  result: ListResult<LineListRow> | null;
+};
+
+export interface LineListPageQuery {
+  getListContext(scope: LineListScope, params: ListParams<LineListSort>): Promise<LineListContext>;
 }

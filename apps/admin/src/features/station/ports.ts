@@ -1,4 +1,6 @@
 import type { StrollerDifficulty, WheelchairDifficulty } from '@furatora/database/enums';
+import type { ListParams, ListResult } from '@/shared/list/params';
+import type { OperatorCard } from '@/shared/list/operatorCard';
 import type { StationCreateInput } from './schema';
 
 // 読み取り: Query Service（ADR-0003）。駅の編集・新規ページが必要とする1画面分の DTO を返す。
@@ -88,4 +90,54 @@ export type StationCreateContext = {
 
 export interface StationCreatePageQuery {
   getCreateContext(prefCode?: number): Promise<StationCreateContext>;
+}
+
+// --- 一覧ページ（#94）---
+//
+// 事業者スコープ化・検索・並び替え・ページングはすべてサーバー側（SQL の
+// WHERE / ORDER BY / LIMIT OFFSET）で行い、URL クエリを唯一の状態源とする
+// （ADR-0009）。並び替えキーは画面固有の文字列 union にし、SQL の列参照や
+// asc()/desc() をこの port に持ち込まない（ADR-0003 が選択肢1を却下した理由への対処）。
+
+export type StationListSort = 'line' | 'code' | 'name' | 'published';
+export const STATION_LIST_SORT_KEYS: readonly StationListSort[] = ['line', 'code', 'name', 'published'];
+
+export type StationListScope = { operatorId?: string; lineId?: string };
+
+export type StationListRow = {
+  id: string;
+  name: string;
+  nameEn: string | null;
+  code: string | null;
+  // JSON シリアライズ可能な形にするため ISO 文字列にする（ADR-0003 の DTO 制約）
+  publishedAt: string | null;
+  stationOrder: number | null;
+  lineId: string;
+  lineName: string;
+  lineColor: string | null;
+  operatorName: string;
+};
+
+export type StationListContext = {
+  // 常に返す（事業者セレクトの選択肢。162件）
+  operators: OperatorOption[];
+  // スコープも検索語も無いときだけ返す（空状態のカード一覧）
+  operatorCards: OperatorCard[];
+  // operatorId 指定時のみ、その事業者の路線（路線セレクトの選択肢）
+  lines: LineOption[];
+  // 選択中スコープの表示名（見出し用。無ければ null）
+  scope: {
+    operatorName: string | null;
+    lineName: string | null;
+    lineColor: string | null;
+  };
+  // スコープも検索語も無いときは null（一覧・件数のクエリを発行しない。受け入れ基準）
+  result: ListResult<StationListRow> | null;
+};
+
+export interface StationListPageQuery {
+  getListContext(
+    scope: StationListScope,
+    params: ListParams<StationListSort>,
+  ): Promise<StationListContext>;
 }
