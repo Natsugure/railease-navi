@@ -7,6 +7,8 @@
 // SQL の列参照や asc()/desc() をこの型に持ち込まない。それらへの変換は
 // external/query/*.ts の中だけで行う（ADR-0003 が選択肢1を却下した理由への対処）。
 
+import { z } from 'zod';
+
 export type SortOrder = 'asc' | 'desc';
 
 export type ListParams<TSort extends string> = {
@@ -35,9 +37,7 @@ export function singleParam(value: string | string[] | undefined): string | unde
   return Array.isArray(value) ? value[0] : value;
 }
 
-const single = singleParam;
-
-const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const uuidSchema = z.string().uuid();
 
 /**
  * スコープ用の UUID パラメータ（operatorId / lineId 等）を取り出す。
@@ -46,8 +46,9 @@ const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{
  * Postgres の `invalid input syntax for type uuid` で 500 になる。
  */
 export function parseUuidParam(value: string | string[] | undefined): string | undefined {
-  const v = single(value);
-  return v && UUID_PATTERN.test(v) ? v : undefined;
+  const v = singleParam(value);
+  const result = v ? uuidSchema.safeParse(v) : undefined;
+  return result?.success ? result.data : undefined;
 }
 
 /**
@@ -59,16 +60,16 @@ export function parseListParams<TSort extends string>(
   raw: Record<string, string | string[] | undefined>,
   spec: ListParamsSpec<TSort>,
 ): ListParams<TSort> {
-  const qRaw = single(raw.q)?.trim();
+  const qRaw = singleParam(raw.q)?.trim();
   const q = qRaw ? qRaw : null;
 
-  const sortRaw = single(raw.sort);
+  const sortRaw = singleParam(raw.sort);
   const sort = spec.sortKeys.includes(sortRaw as TSort) ? (sortRaw as TSort) : spec.defaultSort;
 
-  const orderRaw = single(raw.order);
+  const orderRaw = singleParam(raw.order);
   const order: SortOrder = orderRaw === 'desc' ? 'desc' : 'asc';
 
-  const pageRaw = single(raw.page);
+  const pageRaw = singleParam(raw.page);
   const pageParsed = pageRaw === undefined ? NaN : Number(pageRaw);
   const page = Number.isInteger(pageParsed) && pageParsed >= 1 ? pageParsed : 1;
 

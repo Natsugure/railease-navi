@@ -1,5 +1,6 @@
 import Link from 'next/link';
 import { Card, SimpleGrid, Text } from '@mantine/core';
+import { buildListHref } from '@/shared/list/href';
 import type { OperatorCard } from '@/features/station/ports';
 
 // スコープ・検索語のどちらも無い一覧の空状態（Issue #94）。
@@ -21,7 +22,7 @@ export function OperatorPicker({ basePath, cards }: Props) {
         // 問題なく描画できる。
         <Link
           key={operator.id}
-          href={`${basePath}?operatorId=${operator.id}`}
+          href={buildListHref(basePath, {}, { operatorId: operator.id })}
           style={{ textDecoration: 'none', color: 'inherit' }}
         >
           <Card shadow="sm" padding="md" withBorder>

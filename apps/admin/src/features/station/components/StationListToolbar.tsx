@@ -13,10 +13,10 @@ import type { LineOption, OperatorOption } from '@/features/station/ports';
 // 履歴を汚さないよう router.replace で反映する。
 
 const RESET_PAGE_ON = ['operatorId', 'lineId', 'q'] as const;
-const DEFAULTS = { sort: 'line', order: 'asc' };
 
 type Props = {
   current: ListHrefState;
+  defaults: ListHrefState;
   operatorId: string;
   lineId: string;
   q: string;
@@ -24,7 +24,7 @@ type Props = {
   lines: LineOption[];
 };
 
-export function StationListToolbar({ current, operatorId, lineId, q, operators, lines }: Props) {
+export function StationListToolbar({ current, defaults, operatorId, lineId, q, operators, lines }: Props) {
   const router = useRouter();
   const [searchInput, setSearchInput] = useState(q);
   const [debounced] = useDebouncedValue(searchInput, 400);
@@ -33,16 +33,16 @@ export function StationListToolbar({ current, operatorId, lineId, q, operators, 
     if (debounced === q) return;
     router.replace(
       buildListHref('/stations', current, { q: debounced || null }, {
-        defaults: DEFAULTS,
+        defaults,
         resetPageOn: RESET_PAGE_ON,
       }),
     );
-  }, [debounced, q, current, router]);
+  }, [debounced, q, current, defaults, router]);
 
   function handleOperatorChange(next: string) {
     router.push(
       buildListHref('/stations', current, { operatorId: next || null, lineId: null }, {
-        defaults: DEFAULTS,
+        defaults,
         resetPageOn: RESET_PAGE_ON,
       }),
     );
@@ -51,7 +51,7 @@ export function StationListToolbar({ current, operatorId, lineId, q, operators, 
   function handleLineChange(next: string) {
     router.push(
       buildListHref('/stations', current, { lineId: next || null }, {
-        defaults: DEFAULTS,
+        defaults,
         resetPageOn: RESET_PAGE_ON,
       }),
     );

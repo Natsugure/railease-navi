@@ -1,4 +1,4 @@
-import { Badge, Group, ScrollArea, Stack, Table, TableTbody, TableTd, TableTh, TableThead, TableTr, Text, Title } from '@mantine/core';
+import { Badge, ColorSwatch, Group, ScrollArea, Stack, Table, TableTbody, TableTd, TableTh, TableThead, TableTr, Text, Title } from '@mantine/core';
 import { LinkAnchor, LinkButton } from '@/components/LinkElements';
 import { STATION_LIST_SORT_KEYS, type StationListSort } from '@/features/station/ports';
 import { OperatorPicker } from '@/features/station/components/OperatorPicker';
@@ -49,6 +49,7 @@ export default async function StationsPage({
 
       <StationListToolbar
         current={current}
+        defaults={DEFAULTS}
         operatorId={operatorId}
         lineId={lineId}
         q={params.q ?? ''}
@@ -66,12 +67,7 @@ export default async function StationsPage({
           {context.scope.lineName ? (
             <Group gap="xs">
               {context.scope.lineColor && (
-                <span
-                  style={{
-                    width: 12, height: 12, borderRadius: '50%',
-                    backgroundColor: context.scope.lineColor, display: 'inline-block',
-                  }}
-                />
+                <ColorSwatch color={context.scope.lineColor} size={12} />
               )}
               <Text fw={500}>{context.scope.lineName}</Text>
               <Text size="sm" c="dimmed">({context.result.total}駅)</Text>
@@ -131,12 +127,7 @@ export default async function StationsPage({
                           <TableTd>
                             <Group gap="xs" wrap="nowrap">
                               {stn.lineColor && (
-                                <span
-                                  style={{
-                                    width: 10, height: 10, borderRadius: '50%',
-                                    backgroundColor: stn.lineColor, display: 'inline-block', flexShrink: 0,
-                                  }}
-                                />
+                                <ColorSwatch color={stn.lineColor} size={10} />
                               )}
                               <Text size="sm">{stn.lineName}</Text>
                             </Group>
