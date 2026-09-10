@@ -1,51 +1,44 @@
-import { db } from '@furatora/database/client';
-import {
-  operators,
-  lines,
-  stationLines,
-  stations,
-} from '@furatora/database/schema';
-import { asc, eq } from 'drizzle-orm';
-import { LinkAnchor, LinkButton } from '@/components/LinkElements';
 import { Badge, Group, ScrollArea, Stack, Table, TableTbody, TableTd, TableTh, TableThead, TableTr, Text, Title } from '@mantine/core';
+import { LinkAnchor, LinkButton } from '@/components/LinkElements';
+import { STATION_LIST_SORT_KEYS, type StationListSort } from '@/features/station/ports';
+import { OperatorPicker } from '@/features/station/components/OperatorPicker';
+import { StationListToolbar } from '@/features/station/components/StationListToolbar';
+import { ListPagination } from '@/shared/list/ListPagination';
+import { SortableTh } from '@/shared/list/SortableTh';
+import { parseListParams, parseUuidParam } from '@/shared/list/params';
+import type { ListHrefState } from '@/shared/list/href';
+import { stationListPageQuery } from '@/di';
 
-export default async function StationsPage() {
-  const operatorList = await db.select().from(operators).orderBy(asc(operators.name));
-  const lineList = await db.select().from(lines).orderBy(asc(lines.displayOrder));
+const PER_PAGE = 50;
+const DEFAULTS: ListHrefState = { sort: 'line', order: 'asc' };
 
-  const allStationLines = await db
-    .select({
-      lineId: stationLines.lineId,
-      id: stations.id,
-      name: stations.name,
-      nameEn: stations.nameEn,
-      code: stations.code,
-      publishedAt: stations.publishedAt,
-      stationOrder: stationLines.stationOrder,
-    })
-    .from(stationLines)
-    .innerJoin(stations, eq(stationLines.stationId, stations.id))
-    .orderBy(asc(stationLines.lineId), asc(stationLines.stationOrder));
+export default async function StationsPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const raw = await searchParams;
+  const operatorId = parseUuidParam(raw.operatorId) ?? '';
+  const lineId = parseUuidParam(raw.lineId) ?? '';
+  const params = parseListParams<StationListSort>(raw, {
+    sortKeys: STATION_LIST_SORT_KEYS,
+    defaultSort: 'line',
+    perPage: PER_PAGE,
+  });
 
-  const stationsByLineId = new Map<string, typeof allStationLines>();
-  for (const row of allStationLines) {
-    const group = stationsByLineId.get(row.lineId);
-    if (group) {
-      group.push(row);
-    } else {
-      stationsByLineId.set(row.lineId, [row]);
-    }
-  }
+  const context = await stationListPageQuery.getListContext(
+    { operatorId: operatorId || undefined, lineId: lineId || undefined },
+    params,
+  );
 
-  const lineStations = lineList.map((line) => ({
-    line,
-    stations: stationsByLineId.get(line.id) ?? [],
-  }));
+  const current: ListHrefState = {
+    operatorId, lineId, q: params.q, sort: params.sort, order: params.order, page: params.page,
+  };
 
-  const byOperator = operatorList.map((op) => ({
-    operator: op,
-    lines: lineStations.filter((ls) => ls.line.operatorId === op.id),
-  }));
+  // 路線が確定している（lineId 選択済み）ときだけ「路線」列を隠して見出しに出す。
+  // 事業者すら未選択（全国横断検索）のときは「事業者」列も出す。
+  const showOperatorColumn = !operatorId;
+  const showLineColumn = !lineId;
 
   return (
     <div>
@@ -54,82 +47,126 @@ export default async function StationsPage() {
         <LinkButton href="/stations/new">+ 新規</LinkButton>
       </Group>
 
-      <Stack gap="xl">
-        {byOperator.map(({ operator, lines: opLines }) => (
-          <div key={operator.id}>
-            <Title order={3} mb="sm">{operator.name}</Title>
-            <Stack gap="md" ml="md">
-              {opLines.map(({ line, stations: stns }) => (
-                <div key={line.id}>
-                  <Group gap="xs" mb="xs">
-                    {line.color && (
-                      <span
-                        style={{
-                          width: 12,
-                          height: 12,
-                          borderRadius: '50%',
-                          backgroundColor: line.color,
-                          display: 'inline-block',
-                        }}
+      <StationListToolbar
+        current={current}
+        operatorId={operatorId}
+        lineId={lineId}
+        q={params.q ?? ''}
+        operators={context.operators}
+        lines={context.lines}
+      />
+
+      {context.result === null ? (
+        <Stack gap="md">
+          <Text c="dimmed">事業者を選択するか、駅名で検索してください。</Text>
+          <OperatorPicker basePath="/stations" cards={context.operatorCards} />
+        </Stack>
+      ) : (
+        <Stack gap="md">
+          {context.scope.lineName ? (
+            <Group gap="xs">
+              {context.scope.lineColor && (
+                <span
+                  style={{
+                    width: 12, height: 12, borderRadius: '50%',
+                    backgroundColor: context.scope.lineColor, display: 'inline-block',
+                  }}
+                />
+              )}
+              <Text fw={500}>{context.scope.lineName}</Text>
+              <Text size="sm" c="dimmed">({context.result.total}駅)</Text>
+            </Group>
+          ) : context.scope.operatorName ? (
+            <Text fw={500}>{context.scope.operatorName}の駅（{context.result.total}件）</Text>
+          ) : null}
+
+          {context.result.total === 0 ? (
+            <Text c="dimmed">該当する駅が見つかりません。</Text>
+          ) : (
+            <>
+              <ScrollArea>
+                <Table striped highlightOnHover withTableBorder fz="sm">
+                  <TableThead>
+                    <TableTr>
+                      <SortableTh
+                        label="駅番号" sortKey="code" currentSort={params.sort} currentOrder={params.order}
+                        basePath="/stations" current={current} defaults={DEFAULTS}
                       />
-                    )}
-                    <Text fw={500}>{line.name}</Text>
-                    <Text size="sm" c="dimmed">({stns.length}駅)</Text>
-                  </Group>
-                  <ScrollArea ml="md">
-                    <Table striped highlightOnHover withTableBorder fz="sm">
-                      <TableThead>
-                        <TableTr>
-                          <TableTh>#</TableTh>
-                          <TableTh>駅番号</TableTh>
-                          <TableTh>駅名</TableTh>
-                          <TableTh>駅名（英語）</TableTh>
-                          <TableTh>公開</TableTh>
-                          <TableTh>設備</TableTh>
-                          <TableTh>編集</TableTh>
-                        </TableTr>
-                      </TableThead>
-                      <TableTbody>
-                        {stns.map((stn) => (
-                          <TableTr key={stn.id}>
-                            <TableTd>
-                              <Text c="dimmed">{stn.stationOrder}</Text>
-                            </TableTd>
-                            <TableTd>
-                              <Text ff="monospace">{stn.code ?? '-'}</Text>
-                            </TableTd>
-                            <TableTd>{stn.name}</TableTd>
-                            <TableTd>
-                              <Text c="dimmed">{stn.nameEn ?? '-'}</Text>
-                            </TableTd>
-                            <TableTd>
-                              <LinkAnchor href={`/stations/${stn.id}/publish`} size="sm">
-                                <Badge color={stn.publishedAt ? 'green' : 'gray'} size="sm">
-                                  {stn.publishedAt ? '公開中' : '非公開'}
-                                </Badge>
-                              </LinkAnchor>
-                            </TableTd>
-                            <TableTd>
-                              <LinkAnchor href={`/stations/${stn.id}/facilities`} size="sm">
-                                管理
-                              </LinkAnchor>
-                            </TableTd>
-                            <TableTd>
-                              <LinkAnchor href={`/stations/${stn.id}/edit`} size="sm" c="dimmed">
-                                編集
-                              </LinkAnchor>
-                            </TableTd>
-                          </TableTr>
-                        ))}
-                      </TableTbody>
-                    </Table>
-                  </ScrollArea>
-                </div>
-              ))}
-            </Stack>
-          </div>
-        ))}
-      </Stack>
+                      <SortableTh
+                        label="駅名" sortKey="name" currentSort={params.sort} currentOrder={params.order}
+                        basePath="/stations" current={current} defaults={DEFAULTS}
+                      />
+                      <TableTh>駅名（英語）</TableTh>
+                      {showOperatorColumn && <TableTh>事業者</TableTh>}
+                      {showLineColumn && (
+                        <SortableTh
+                          label="路線" sortKey="line" currentSort={params.sort} currentOrder={params.order}
+                          basePath="/stations" current={current} defaults={DEFAULTS}
+                        />
+                      )}
+                      <SortableTh
+                        label="公開" sortKey="published" currentSort={params.sort} currentOrder={params.order}
+                        basePath="/stations" current={current} defaults={DEFAULTS}
+                      />
+                      <TableTh>設備</TableTh>
+                      <TableTh>編集</TableTh>
+                    </TableTr>
+                  </TableThead>
+                  <TableTbody>
+                    {context.result.rows.map((stn) => (
+                      <TableTr key={stn.id}>
+                        <TableTd>
+                          <Text ff="monospace">{stn.code ?? '-'}</Text>
+                        </TableTd>
+                        <TableTd>{stn.name}</TableTd>
+                        <TableTd>
+                          <Text c="dimmed">{stn.nameEn ?? '-'}</Text>
+                        </TableTd>
+                        {showOperatorColumn && (
+                          <TableTd>
+                            <Text size="sm" c="dimmed">{stn.operatorName}</Text>
+                          </TableTd>
+                        )}
+                        {showLineColumn && (
+                          <TableTd>
+                            <Text size="sm">{stn.lineName}</Text>
+                          </TableTd>
+                        )}
+                        <TableTd>
+                          <LinkAnchor href={`/stations/${stn.id}/publish`} size="sm">
+                            <Badge color={stn.publishedAt ? 'green' : 'gray'} size="sm">
+                              {stn.publishedAt ? '公開中' : '非公開'}
+                            </Badge>
+                          </LinkAnchor>
+                        </TableTd>
+                        <TableTd>
+                          <LinkAnchor href={`/stations/${stn.id}/facilities`} size="sm">
+                            管理
+                          </LinkAnchor>
+                        </TableTd>
+                        <TableTd>
+                          <LinkAnchor href={`/stations/${stn.id}/edit`} size="sm" c="dimmed">
+                            編集
+                          </LinkAnchor>
+                        </TableTd>
+                      </TableTr>
+                    ))}
+                  </TableTbody>
+                </Table>
+              </ScrollArea>
+
+              <ListPagination
+                total={context.result.total}
+                page={context.result.page}
+                perPage={context.result.perPage}
+                basePath="/stations"
+                current={current}
+                defaults={DEFAULTS}
+              />
+            </>
+          )}
+        </Stack>
+      )}
     </div>
   );
 }
