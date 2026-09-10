@@ -1,239 +1,146 @@
-# 実装タスク: 駅・路線マスタの新規作成手段を Admin に実装する (Issue #88)
+# 実装タスク: 駅・路線一覧を事業者スコープ化し、絞り込みと並び替えを追加する (Issue #94)
 
 - **対象**: `apps/admin`
 - **参照**: [requirements.md](./requirements.md) / [design.md](./design.md)
-- **作成日**: 2026-09-08
-- **ブランチ**: `feature/issue88-station-master-create`（PR1）/ その上に PR2 / PR3
-- **信頼度**: 90%（高）
+- **作成日**: 2026-09-10
+- **ブランチ**: `feature/issue94-list-scoping`（PR1 / PR2）
+- **信頼度**: 88%（高）
 
-## 進捗（2026-09-08）
+## 進捗（2026-09-10）
 
-- 実装（Phase 0 / 1 / 3 / 5 / 6 / 7）とドキュメント更新（Phase 9 の docs/domain・schema.ts）は**完了**。
-  `pnpm run lint` / `typecheck` / `test`（admin 309）/ `build` すべて通過。
-  複合 `ON CONFLICT (...)` の生成 SQL を `toSQL()` で確認済み。
-- **未実施**: 各 PR の手動 / E2E 検証（Neon `development` ブランチが要る）、
-  gh-stack での PR 作成、後続 Issue の起票（stationGroups 作成 / 駅名重複検出）。
+- PR1（`shared/list/` + 駅一覧の Query Service 化）: 実装・検証完了
+- PR2（路線一覧の Query Service 化）: 実装・検証完了
+  - PR2 着手時に `OperatorPicker` / `OperatorCard` を `features/station/` から
+    `shared/list/` へ移設（ADR-0001 の feature 間依存ルールに抵触するため。
+    line ⇄ station は許可された依存ではない）
 
 ## フェーズ構成
 
 ```
-PR1: 仕様整備 + 路線の作成
-  Phase 0: 仕様3点セットの全面書き換え（本ファイル群）
-  Phase 1: 路線作成の縦切り（schema → ports → repository → query → route → form → page → di）
-  Phase 2: PR1 検証（lint / typecheck / test / build / 手動）
+PR1: 仕様整備 + ADR-0009 + shared/list/ + 駅一覧
+  Phase 0: 仕様3点セットの全面書き換え + ADR-0009
+  Phase 1: shared/list/ の共通契約
+  Phase 2: 駅一覧の縦切り（ports → query → components → page → di → eslint）
+  Phase 3: PR1 検証
 
-PR2: 駅の作成
-  Phase 3: 駅作成の縦切り（withTransaction で stations + stationLines）
-  Phase 4: PR2 検証
-
-PR3: 乗換接続・隣接の作成と削除
-  Phase 5: 乗換接続（createPair / deletePair、段階スコープの候補クエリ）
-  Phase 6: 隣接（昇順正規化の純粋関数、lineId 所属検証）
-  Phase 7: DeleteButton の redirectTo 任意化、StationEditForm への削除導線
-  Phase 8: PR3 検証
-
-Phase 9: ドキュメント更新（docs/domain 上書き・schema.ts コメント・Issue 起票）・引き渡し
+PR2: 路線一覧
+  Phase 4: 路線一覧の縦切り（PR1 の契約を再利用）
+  Phase 5: ドキュメントと引き渡し
 ```
 
 ### 実行順序の根拠
 
-- Phase 1 で作成系の最小パターンを固め、Phase 3 / 5 / 6 はその反復にする
-- Phase 5/6（`withTransaction` + 複合 `onConflict` + ドメイン正規化）が最もリスクが高いため最後
-- Phase 7 は Phase 5/6 の後（削除 API が無いと導線を繋げない）
+`shared/list/` の契約（`ListParams` / `ListResult` / `buildListHref` /
+`SortableTh` / `ListPagination`）は画面をまたいで再利用する共通資産であり、
+1画面目（駅一覧）の実装を通して検証してから2画面目（路線一覧）に適用する方が、
+最初から2画面分を仮定して設計するより手戻りが少ない（ADR-0002「port を推測で
+設計してはならない」と同じ理由）。
 
 ---
 
-## PR1: 路線の作成
+## PR1: shared/list/ + 駅一覧
 
-### Phase 0: 仕様整備
-
-- [x] **TASK-0.1** `docs/spec/requirements.md` を Issue #88 用に全面書き換え
+- [x] **TASK-0.1** `docs/spec/requirements.md` を全面書き換え
 - [x] **TASK-0.2** `docs/spec/design.md` を全面書き換え
 - [x] **TASK-0.3** `docs/spec/tasks.md`（本ファイル）を全面書き換え
+- [x] **TASK-0.4** `docs/adr/0009-list-query-server-side-scoping.md` を新規作成（Proposed）
+- [x] **TASK-0.5** `docs/adr/README.md` の一覧表に ADR-0009 を追加
 
-### Phase 1: 路線作成
+- [x] **TASK-1.1** `shared/list/params.ts` を新規作成。`ListParams` / `ListResult` /
+      `parseListParams` / `singleParam` / `parseUuidParam` / `escapeLikePattern`
+- [x] **TASK-1.2** `shared/list/params.test.ts` を新規作成。既定値・不正値フォールバック・
+      配列値・空白トリム・UUID検証・LIKEエスケープをカバー（16ケース）
+- [x] **TASK-1.3** `shared/list/href.ts` を新規作成。`buildListHref`（純関数）
+- [x] **TASK-1.4** `shared/list/href.test.ts` を新規作成（8ケース）
+- [x] **TASK-1.5** `shared/list/SortableTh.tsx` を新規作成（Client Component）。
+      内部で `buildListHref` を呼ぶ（関数 props を受け取らない設計。
+      設計変更の経緯は design.md「Server Component → Client Component の
+      関数 props 制約」参照）
+- [x] **TASK-1.6** `shared/list/ListPagination.tsx` を新規作成（Client Component、
+      同様の設計）
 
-- [x] **TASK-1.1** `features/line/schema.ts` を新規作成。`lineCreateSchema` +
-      `LineCreateInput`（`z.infer`）。`slug` を含めない
-- [x] **TASK-1.2** `features/line/schema.test.ts` を新規作成。`name` / `operatorId` 必須、
-      不正 uuid の拒否。`platform/schema.test.ts` と同型
-- [x] **TASK-1.3** `features/line/ports.ts` に `LineRepository` / `LineRecord` と
-      `LineEditPageQuery.getCreateContext()` / `LineCreateContext` を追記
-- [x] **TASK-1.4** `external/repository/lineRepository.ts` を新規作成（`db`。
-      `platformRepository.ts` の `create` と同型。`requireInserted` で受ける）
-- [x] **TASK-1.5** `external/query/lineEditPageQuery.ts` に `getCreateContext()` を追記
-      （既存 `getOperatorOptions()` を再利用）
-- [x] **TASK-1.6** `app/api/lines/route.ts` を新規作成。`POST`。
-      `platforms/route.ts` + `publication/route.ts`（JSON parse ガード）と同型。
-      **`@furatora/database` を import しない**（`@/di` 経由）
-- [x] **TASK-1.7** `components/LineForm.tsx` を新規/編集兼用に改修。
-      `lineId?` / `initialData?` を任意化。`lineId` の有無で `PUT` / `POST` を切替。
-      ボタンラベル `lineId ? '更新' : '作成'`。`OperatorForm` パターンを踏襲
-- [x] **TASK-1.8** `app/lines/new/page.tsx` を新規作成。
-      `lineEditPageQuery.getCreateContext()` で事業者を渡して `<LineForm operators={...} />`
-- [x] **TASK-1.9** `app/lines/page.tsx` の見出しを `Group justify="space-between"` にして
-      「+ 新規」（`LinkButton href="/lines/new"`）を追加
-- [x] **TASK-1.10** `di.ts` に `lineRepository` を配線
-- [x] **TASK-1.11** ESLint 境界の確認: `app/api/lines/route.ts` に一時的に
-      `import { db } from '@furatora/database/client';` を足し、`pnpm run lint` が
-      その行でエラーになることを確認して戻す
+- [x] **TASK-2.1** `features/station/ports.ts` に追記: `StationListSort` /
+      `STATION_LIST_SORT_KEYS` / `StationListScope` / `StationListRow` /
+      `OperatorCard` / `StationListContext` / `StationListPageQuery`
+- [x] **TASK-2.2** `external/query/stationListPageQuery.ts` を新規作成。
+      スコープ・検索・並び替え・ページングをすべて SQL 側で処理し、
+      スコープ・検索語が無いときは一覧・件数クエリを発行しない
+- [x] **TASK-2.3** `features/station/components/OperatorPicker.tsx` を新規作成
+      （Server Component。空状態の事業者カード一覧）
+- [x] **TASK-2.4** `features/station/components/StationListToolbar.tsx` を新規作成
+      （Client Component。事業者/路線セレクト + デバウンス検索）
+- [x] **TASK-2.5** `app/stations/page.tsx` を全面書き換え。`db` の直接 import を
+      無くし `@/di` 経由の Query Service のみを呼ぶ
+- [x] **TASK-2.6** `app/stations/loading.tsx` にツールバー分のスケルトンを追加
+- [x] **TASK-2.7** `di.ts` に `stationListPageQuery` を配線
+- [x] **TASK-2.8** `eslint.config.mjs` の `legacyExclusions` から
+      `src/app/stations/page.tsx` を除去
+- [x] **TASK-2.9** `e2e/stations-list.spec.ts` を新規作成。空状態・スコープ遷移・
+      並び替え・検索・LIKEエスケープ・不正パラメータの7ケース
 
-### Phase 2: PR1 検証
+### Phase 3: PR1 検証
 
-- [ ] **TASK-2.1** `pnpm run lint` → 0 problems
-- [ ] **TASK-2.2** `pnpm --filter @furatora/admin typecheck` → 0 errors
-- [ ] **TASK-2.3** `pnpm --filter @furatora/admin test` → 新規 schema/route テストが緑、既存不変
-- [ ] **TASK-2.4** `pnpm run build` → 通過
-- [ ] **TASK-2.5** 手動（admin :3001）: `/lines/new` で作成 → `/lines` に出る。
-      `/lines/[id]/edit` が従来どおり更新できる（兼用改修の回帰確認）
-- [ ] **TASK-2.6** PR1 作成（gh-stack）
+- [x] `pnpm run typecheck`（admin）→ エラー0
+- [x] `pnpm run lint`（admin、変更ファイル対象）→ 0 problems
+- [x] `pnpm exec vitest run`（admin）→ 333/333 passed（新規24件含む）
+- [x] `pnpm exec next build`（admin）→ 成功
+- [x] 実データに対する直接 SQL 検証（Neon MCP、`development` ブランチ）:
+      件数一致（JR東日本1,961駅）、路線ブロックの連続性（86路線=86ブロック）、
+      `name_kana` ソートの妥当性、LIKE エスケープの効果（`q='_'`: 未エスケープなら
+      10,625件・エスケープ後0件）
+- [x] Playwright E2E（`next dev`、Credentials バイパス）:
+      `e2e/stations-list.spec.ts` 7/7 pass、既存スイート回帰なし
+      （`operators.spec.ts` の1件失敗は本 Issue 対象外の `OperatorForm.tsx`
+      に起因する既存不具合。未着手ファイルであることを diff で確認済み。
+      別途 Issue 化を検討）
 
 ---
 
-## PR2: 駅の作成
+## PR2: 路線一覧
 
-### Phase 3: 駅作成
-
-- [x] **TASK-3.1** `features/station/schema.ts` を新規作成。`stationCreateSchema` +
-      `StationCreateInput`。**`slug` を含めない**
-- [x] **TASK-3.2** `features/station/schema.test.ts` を新規作成
-- [x] **TASK-3.3** `features/station/ports.ts` に `StationRepository` / `StationRecord`、
-      `StationCreatePageQuery` / `StationCreateContext` / `StationGroupOption` を追記
-- [x] **TASK-3.4** `external/repository/stationRepository.ts` を新規作成（**`withTransaction`**）。
-      `stations` INSERT → 返却 id で `stationLines` INSERT。
-      23503（FK 違反）を `err.cause.code` 方式で検知する `isForeignKeyViolation` を実装し
-      `StationReferenceNotFoundError` を throw
-- [x] **TASK-3.5** `external/query/stationCreatePageQuery.ts` を新規作成。
-      `operators` 全件 + `lines` 全件（`id`/`name`/`operatorId`）+
-      `prefCode` 指定時のみ `stationGroups` を絞って返す
-- [x] **TASK-3.6** `app/api/stations/route.ts` を新規作成。`POST`。
-      `StationReferenceNotFoundError` → 422
-- [x] **TASK-3.7** `components/StationCreateForm.tsx` を新規作成（軽量）。
-      事業者→路線の段階セレクト、`prefCode` 変更で `router.push('/stations/new?prefCode=')`、
-      グループセレクト（任意）。`POST /api/stations`
-- [x] **TASK-3.8** `app/stations/new/page.tsx` を新規作成。
-      `searchParams.prefCode` を `getCreateContext` に渡す
-- [x] **TASK-3.9** `app/stations/page.tsx` の見出しに「+ 新規」を追加
-- [x] **TASK-3.10** `di.ts` に `stationRepository` / `stationCreatePageQuery` を配線
+- [x] **TASK-4.0** `features/station/components/OperatorPicker.tsx` と
+      `OperatorCard` 型を `shared/list/`（`OperatorPicker.tsx` /
+      `operatorCard.ts`）へ移設。駅一覧側の import も追従（`app/stations/page.tsx`、
+      `features/station/ports.ts`、`external/query/stationListPageQuery.ts`）
+- [x] **TASK-4.1** `features/line/ports.ts` に追記: `LineListSort` /
+      `LINE_LIST_SORT_KEYS` / `LineListScope` / `LineListRow`（駅数列を含む）/
+      `LineListContext` / `LineListPageQuery`
+- [x] **TASK-4.2** `external/query/lineListPageQuery.ts` を新規作成。
+      駅一覧と同じ契約（`ListParams` / `ListResult`）に従う。駅数は当該ページの
+      路線IDのみ `inArray` + `GROUP BY` で畳む
+- [x] **TASK-4.3** `features/line/components/LineListToolbar.tsx` を新規作成
+      （事業者セレクト + 検索。路線セレクトは無い）
+- [x] **TASK-4.4** `app/lines/page.tsx` を全面書き換え
+- [x] **TASK-4.5** `app/lines/loading.tsx` にツールバー分のスケルトンを追加
+- [x] **TASK-4.6** `di.ts` に `lineListPageQuery` を配線
+- [x] **TASK-4.7** `eslint.config.mjs` の `legacyExclusions` から
+      `src/app/lines/page.tsx` を除去
+- [x] **TASK-4.8** `e2e/lines-list.spec.ts` を新規作成（5ケース）
 
 ### Phase 4: PR2 検証
 
-- [ ] **TASK-4.1** `pnpm run lint` / `typecheck` / `test` / `build`
-- [ ] **TASK-4.2** 手動: `/stations/new` で作成 → `/stations` の該当路線配下に出る。
-      `db:studio` で `stations` 1行 + `stationLines` 1行、`publishedAt`/`slug`/`ekidataStationCd` が NULL
-- [ ] **TASK-4.3** 手動: 作成した駅を `/stations/[id]/publish` から公開できる
-- [ ] **TASK-4.4** `stationRepository.create` の tx を `toSQL()` またはログで確認し、
-      `stationLines` INSERT 失敗時に `stations` 行が残らないことを確認
-      （存在しない `lineId` を直接 POST して 422 と DB 未変更を確認）
-- [ ] **TASK-4.5** PR2 作成（gh-stack、PR1 の上）
+- [x] `pnpm run typecheck`（admin）→ エラー0
+- [x] `pnpm run lint`（admin、変更ファイル対象）→ 0 problems
+- [x] `pnpm exec vitest run`（admin）→ 333/333 passed（回帰なし）
+- [x] `pnpm exec next build`（admin）→ 成功
+- [x] 実データに対する直接 SQL 検証（Neon MCP）: JR東日本の路線数（86件）が
+      一覧の総件数と一致
+- [x] Playwright E2E: `e2e/lines-list.spec.ts` 5/5 pass。全スイート実行で
+      24件中23件 pass（1件は `operators.spec.ts` の既存不具合。下記参照）
 
----
+### Phase 5: ドキュメントと引き渡し
 
-## PR3: 乗換接続・隣接の作成と削除
-
-### Phase 5: 乗換接続
-
-- [x] **TASK-5.1** `features/station-connection/schema.ts` +
-      `schema.test.ts`。`stationConnectionCreateSchema`
-- [x] **TASK-5.2** `features/station-connection/ports.ts`。
-      `StationConnectionRepository.createPair()` / `deletePair()`、
-      `StationConnectionCreatePageQuery.getCreateContext()`、関連 DTO
-- [x] **TASK-5.3** `external/repository/stationConnectionRepository.ts`。
-      `createPair` は `withTransaction` + 2行 `values([...])` +
-      `onConflictDoNothing({ target: [stationConnections.stationId, stationConnections.connectedStationId] })`。
-      `deletePair` は `or(and(...), and(...))` の単一 DELETE
-- [x] **TASK-5.4** `external/query/stationConnectionCreatePageQuery.ts`。
-      段階スコープ（operatorId 未指定→事業者のみ / 指定→路線 / lineId 指定→路線内の駅、自駅除外）。
-      **全駅を一度に読まない**
-- [x] **TASK-5.5** `app/api/stations/[stationId]/connections/route.ts`（`POST`）。
-      自己接続（`connectedStationId === stationId`）→ 400。冪等なので既存でも 201
-- [x] **TASK-5.6** `app/api/stations/[stationId]/connections/[connectedStationId]/route.ts`（`DELETE`）。
-      0行なら 404
-- [x] **TASK-5.7** `app/stations/[stationId]/connections/new/page.tsx`。
-      `searchParams` の `operatorId` / `lineId` でスコープ、セレクト変更で `router.push`
-- [x] **TASK-5.8** `di.ts` に `stationConnectionRepository` / `stationConnectionCreatePageQuery` を配線
-- [x] **TASK-5.9** route ハンドラテスト（`vi.mock('@/di')`）: 正常系 / 自己接続 400 / zod 400
-
-### Phase 6: 隣接
-
-- [x] **TASK-6.1** `features/station-adjacency/domain/normalize.ts` +
-      `normalize.test.ts`。`normalizeAdjacencyEndpoints(x, y)`
-- [x] **TASK-6.2** `features/station-adjacency/schema.ts` + `schema.test.ts`。
-      `.refine()` で自己隣接を拒否
-- [x] **TASK-6.3** `features/station-adjacency/ports.ts`。
-      `StationAdjacencyRepository.create()` / `delete()`、
-      `StationAdjacencyPageQuery.getPageContext()`、`AdjacencyEndpointNotOnLineError`、関連 DTO
-- [x] **TASK-6.4** `external/repository/stationAdjacencyRepository.ts`（`db`）。
-      `stationLines` で両端点の `lineId` 所属を検証 → 不足なら `AdjacencyEndpointNotOnLineError`。
-      `normalizeAdjacencyEndpoints` を通してから
-      `onConflictDoNothing({ target: [lineId, stationAId, stationBId] })`
-- [x] **TASK-6.5** `external/query/stationAdjacencyPageQuery.ts`。
-      路線名 + 駅一覧（`stationOrder` 順）+ 既存隣接行（両端点の駅名を JOIN）
-- [x] **TASK-6.6** `app/api/lines/[lineId]/adjacencies/route.ts`（`POST`）。
-      `AdjacencyEndpointNotOnLineError` → 422
-- [x] **TASK-6.7** `app/api/lines/[lineId]/adjacencies/[adjacencyId]/route.ts`（`DELETE`）
-- [x] **TASK-6.8** `app/lines/[lineId]/adjacencies/page.tsx`。
-      `lines/[lineId]/directions/` と同じ階層・構成
-- [x] **TASK-6.9** `app/lines/page.tsx` の操作列に「隣接を管理」を追加
-- [x] **TASK-6.10** `di.ts` に `stationAdjacencyRepository` / `stationAdjacencyPageQuery` を配線
-- [x] **TASK-6.11** route ハンドラテスト: 正常系 / 端点不整合 422 / 自己隣接 400
-
-### Phase 7: 削除ボタンと駅編集ページ導線
-
-- [x] **TASK-7.1** `components/DeleteButton.tsx` の `redirectTo` を任意化
-      （省略時は `router.refresh()` のみ）。既存呼び出し元は全て `redirectTo` を渡すため後方互換
-- [x] **TASK-7.2** `features/station/ports.ts` の `ConnectionRow` に
-      `connectedStationId: string` を追加。`external/query/stationEditPageQuery.ts` も対応
-- [x] **TASK-7.3** `components/StationEditForm.tsx`: 接続一覧テーブルに削除列
-      （`DeleteButton endpoint={/api/stations/${stationId}/connections/${conn.connectedStationId}}`）、
-      見出しに「接続を追加」リンク。**`handleSave` の PUT fetch 群は変更しない**
-
-### Phase 8: PR3 検証
-
-- [ ] **TASK-8.1** `pnpm run lint` / `typecheck` / `test` / `build`
-- [x] **TASK-8.2** 手動（Chrome DevTools MCP, Neon `development`）: JR山手線「巣鴨」edit →
-      「+ 接続を追加」→ 事業者=東京メトロ / 路線=丸ノ内線 / 相手駅=方南町 で追加 → `POST` 201。
-      `station_connections` に有向2行・`source='manual'`・同一 `created_at`。
-      同じ組を再 POST → 201 だが行数・`created_at` 不変（`onConflictDoNothing`）
-- [x] **TASK-8.3** 手動: 巣鴨 edit の接続一覧「接続を削除」→ 確認モーダル → `DELETE` 200。
-      方南町ペアの2行とも消滅。既存の都営三田線—巣鴨（2行）は不変。見出しが「1件」に更新
-- [x] **TASK-8.4** 手動: 丸ノ内線 adjacencies で 駅1=荻窪 / 駅2=新高円寺 追加 → 201。
-      `station_adjacencies` 1行、`station_a_id`=荻窪 `< station_b_id`=新高円寺（昇順正規化）。
-      逆順（新高円寺, 荻窪）で再 POST → 201 だが同一 `id` の1行のまま
-- [x] **TASK-8.5** 手動: 丸ノ内線に対し 荻窪 × 巣鴨（山手線・丸ノ内線に無い）を直接 POST → 422
-      `{"error":"隣接の端点がこの路線に属していません"}`。端点順序を入替えても 422、行は未作成
-- [ ] **TASK-8.6** `toSQL()` で複合 `ON CONFLICT (...)` 句・候補クエリのスコープ絞りを確認
-      （候補クエリのスコープ絞りは TASK-8.2 の手動操作でも確認済み: 相手駅セレクトは
-      選択路線の28駅のみを表示し、全10,625駅を読まない・自駅も除外）
-- [ ] **TASK-8.7** PR3 作成（gh-stack、PR2 の上）
-
----
-
-## Phase 9: ドキュメントと引き渡し
-
-- [x] **TASK-9.1** `docs/domain/station-master-model.md` を上書き:
-      - 冒頭の適用状況注記から「既存行の更新しかできず…新規作成する UI / API は無い」を削除
-      - 「隣接」節: 「現時点でそれを担保するコードは存在しない」→ 実装場所
-        （`apps/admin/src/features/station-adjacency/domain/normalize.ts`）の明記に置換
-      - 「乗換接続」節: 「現時点で行を追加する手段は無い」を削除し、作成経路
-        （`POST /api/stations/[stationId]/connections`、有向2行・冪等）を記述
-- [x] **TASK-9.2** `docs/domain/station-visibility.md`:
-      「書き込み側（Admin の公開操作）」節の前後に、新規駅が
-      `publishedAt = NULL` / `slug = NULL` で作られ、作成フォームは `slug` を扱わないことを追記
-- [x] **TASK-9.3** `packages/database/src/schema.ts`:
-      `stationConnections` の `unique_station_connection` コメントの
-      「現時点でこのテーブルへ INSERT するコードは無い（作成 API / UI は Issue #88）」を、
-      `stationConnectionRepository.createPair` を指す記述に更新。
-      `stationAdjacencies` の「この表に書き込むコードは端点 UUID を昇順へ正規化してから」の
-      コメントに実装場所（`normalizeAdjacencyEndpoints`）を追記
-- [x] **TASK-9.4** `docs/adr/`: 新規 ADR なし。既存 ADR のステータスも変更しない
-- [x] **TASK-9.5** GitHub Issue 起票:
-      1. #96 `[station-master] stationGroups（乗換単位グループ）の新規作成手段`
-         （`ekidataStationGroupCd` の NOT NULL 解除を伴うドメイン判断。ADR 要）
-      2. #97 `[admin] 駅の新規作成時に駅名の重複を検出して警告する`
-         （`normalize.ts` の再実装。正規化規則は
-         station-master-model.md「駅名の正規化ルール」に記載済み）
-- [ ] **TASK-9.6** `docs/spec/` は次 Issue で全面書き換えされる。恒久知識
-      （隣接の昇順正規化・乗換接続の有向2行）が `features/*/ports.ts` /
-      `schema.ts` のコメントと `docs/domain/` に残っていることを確認
-- [ ] **TASK-9.7** 各 PR にエグゼクティブサマリーと変更履歴を記載
+- [x] `docs/domain/station-master-model.md` に `station_lines.station_order` の
+      NULL 実態（97%）と `ekidata_station_cd` フォールバックの事実を追記
+- [x] ADR-0009 のステータスは `Proposed` のまま残す（実装・E2E検証は完了したが、
+      本番相当の負荷・運用を経た検証ではないため `Accepted` への昇格は見送る。
+      ADR README の「実装・検証を通過した」が本番相当の運用実績を含むかは
+      解釈の余地があるが、保守的に判断した）
+- [x] 後続 Issue の起票を検討（起票は開発者判断のため本 Issue では GitHub Issue
+      作成まで行わず、ここに記録するに留める）:
+      - `station_lines.station_order` のデータ移行（ekidata_station_cd から
+        補完し、フォールバックを解消する）
+      - `OperatorForm.tsx` の「表示優先度」ラベル関連付けの不具合。本 Issue の
+        作業中に E2E（`operators.spec.ts` 既存テスト）で偶発的に検出。
+        `getByLabel(/表示優先度/)` が要素を見つけられない。本 Issue が
+        触れていないファイルのため対応せず、事実の記録のみ行う
