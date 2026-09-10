@@ -39,8 +39,10 @@ function buildOrderBy(sort: LineListSort, order: 'asc' | 'desc') {
   switch (sort) {
     case 'name':
       // collation が C.UTF-8 のため lines.name は五十音順にならない。
-      // name_kana は NULL 0件（2026-09-10実測）なのでこちらをキーにする
-      return [dir(lines.nameKana), asc(lines.id)];
+      // name_kana は NULL 0件（2026-09-10実測）なのでこちらをキーにする。
+      // ただし name_kana は nullable（手動追加路線を許容）なので、他キーと同様に
+      // NULLS LAST を明示して DESC 時に NULL 行が先頭へ来ないようにする。
+      return [nullsLastOrder(lines.nameKana, order), asc(lines.id)];
     case 'lineCode':
       return [nullsLastOrder(lines.lineCode, order), asc(lines.id)];
     case 'operator':
