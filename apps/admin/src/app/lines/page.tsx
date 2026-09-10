@@ -1,4 +1,4 @@
-import { Group, ScrollArea, Stack, Table, TableTbody, TableTd, TableTh, TableThead, TableTr, Text, Title } from '@mantine/core';
+import { ColorSwatch, Group, ScrollArea, Stack, Table, TableTbody, TableTd, TableTh, TableThead, TableTr, Text, Title } from '@mantine/core';
 import { LinkAnchor, LinkButton } from '@/components/LinkElements';
 import { LINE_LIST_SORT_KEYS, type LineListSort } from '@/features/line/ports';
 import { LineListToolbar } from '@/features/line/components/LineListToolbar';
@@ -87,14 +87,7 @@ export default async function LinesPage({
                       <TableTr key={line.id}>
                         <TableTd>
                           <Group gap="xs" wrap="nowrap">
-                            {line.color && (
-                              <span
-                                style={{
-                                  width: 10, height: 10, borderRadius: '50%',
-                                  backgroundColor: line.color, display: 'inline-block', flexShrink: 0,
-                                }}
-                              />
-                            )}
+                            {line.color && <ColorSwatch color={line.color} size={10} />}
                             {line.name}
                           </Group>
                         </TableTd>

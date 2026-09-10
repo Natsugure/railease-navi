@@ -1,6 +1,6 @@
 import { db } from '@furatora/database/client';
 import { lines, operators, stationLines } from '@furatora/database/schema';
-import { and, asc, count, desc, eq, ilike, inArray, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, count, desc, eq, ilike, inArray, or, sql, type AnyColumn, type SQL } from 'drizzle-orm';
 import { escapeLikePattern } from '@/shared/list/params';
 import type { ListParams, ListResult } from '@/shared/list/params';
 import type { OperatorCard } from '@/shared/list/operatorCard';
@@ -30,6 +30,10 @@ function buildWhere(scope: LineListScope, q: string | null): SQL | undefined {
 
 // order=desc で反転させるのは選択中のキーのみ。末尾の lines.id ASC は常に固定する
 // （OFFSET ページングの安定性のため）。
+function nullsLastOrder(column: AnyColumn, order: 'asc' | 'desc') {
+  return order === 'desc' ? sql`${column} DESC NULLS LAST` : sql`${column} ASC NULLS LAST`;
+}
+
 function buildOrderBy(sort: LineListSort, order: 'asc' | 'desc') {
   const dir = order === 'desc' ? desc : asc;
   switch (sort) {
@@ -38,10 +42,7 @@ function buildOrderBy(sort: LineListSort, order: 'asc' | 'desc') {
       // name_kana は NULL 0件（2026-09-10実測）なのでこちらをキーにする
       return [dir(lines.nameKana), asc(lines.id)];
     case 'lineCode':
-      return [
-        order === 'desc' ? sql`${lines.lineCode} DESC NULLS LAST` : sql`${lines.lineCode} ASC NULLS LAST`,
-        asc(lines.id),
-      ];
+      return [nullsLastOrder(lines.lineCode, order), asc(lines.id)];
     case 'operator':
       // operators.name も同じ collation 制約を受けるが、operators に name_kana は無く
       // 既存コード（stationCreatePageQuery 等）も name でソートしている。
@@ -49,10 +50,7 @@ function buildOrderBy(sort: LineListSort, order: 'asc' | 'desc') {
       return [dir(operators.name), asc(lines.id)];
     case 'displayOrder':
     default:
-      return [
-        order === 'desc' ? sql`${lines.displayOrder} DESC NULLS LAST` : sql`${lines.displayOrder} ASC NULLS LAST`,
-        asc(lines.id),
-      ];
+      return [nullsLastOrder(lines.displayOrder, order), asc(lines.id)];
   }
 }
 
@@ -60,14 +58,13 @@ async function getOperatorOptions() {
   return db.select({ id: operators.id, name: operators.name }).from(operators).orderBy(asc(operators.name));
 }
 
-async function getScopeLabel(scope: LineListScope) {
-  if (!scope.operatorId) return { operatorName: null };
-  const [row] = await db
-    .select({ name: operators.name })
-    .from(operators)
-    .where(eq(operators.id, scope.operatorId))
-    .limit(1);
-  return { operatorName: row?.name ?? null };
+// operatorOptions（全事業者）に既に載っている名前を引き直すだけなので、
+// 別クエリは発行しない。
+function getScopeLabel(scope: LineListScope, operatorOptions: { id: string; name: string }[]) {
+  const operatorName = scope.operatorId
+    ? (operatorOptions.find((o) => o.id === scope.operatorId)?.name ?? null)
+    : null;
+  return { operatorName };
 }
 
 // スコープ・検索語が無い空状態のカード一覧。表示順は displayPriority（表示順専用の列。
@@ -132,9 +129,8 @@ export const dbLineListPageQuery: LineListPageQuery = {
     // 何も無い空状態では発行しない（受け入れ基準）。
     const showResult = Boolean(scope.operatorId || params.q);
 
-    const [operatorOptions, scopeLabel, operatorCards, result] = await Promise.all([
+    const [operatorOptions, operatorCards, result] = await Promise.all([
       getOperatorOptions(),
-      getScopeLabel(scope),
       showResult ? Promise.resolve([]) : getOperatorCards(),
       showResult ? getListResult(scope, params) : Promise.resolve(null),
     ]);
@@ -142,7 +138,7 @@ export const dbLineListPageQuery: LineListPageQuery = {
     const context: LineListContext = {
       operators: operatorOptions,
       operatorCards,
-      scope: scopeLabel,
+      scope: getScopeLabel(scope, operatorOptions),
       result,
     };
     return context;
