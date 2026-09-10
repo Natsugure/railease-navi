@@ -129,7 +129,17 @@ export default async function StationsPage({
                         )}
                         {showLineColumn && (
                           <TableTd>
-                            <Text size="sm">{stn.lineName}</Text>
+                            <Group gap="xs" wrap="nowrap">
+                              {stn.lineColor && (
+                                <span
+                                  style={{
+                                    width: 10, height: 10, borderRadius: '50%',
+                                    backgroundColor: stn.lineColor, display: 'inline-block', flexShrink: 0,
+                                  }}
+                                />
+                              )}
+                              <Text size="sm">{stn.lineName}</Text>
+                            </Group>
                           </TableTd>
                         )}
                         <TableTd>
