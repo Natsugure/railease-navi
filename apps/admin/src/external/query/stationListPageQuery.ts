@@ -103,7 +103,10 @@ async function getOperatorCards(): Promise<OperatorCard[]> {
     .from(operators)
     .leftJoin(lines, eq(lines.operatorId, operators.id))
     .groupBy(operators.id, operators.name, operators.displayPriority)
-    .orderBy(asc(operators.displayPriority), asc(operators.name));
+    // displayPriority = 0 は「表示順の指定なし」を表す番兵（NOT NULL DEFAULT 0。
+    // docs/domain/station-visibility.md）。素の ASC では 0 が先頭に来てしまうため、
+    // 指定なしを末尾へ沈めてから、優先度の昇順・名前順で並べる。
+    .orderBy(sql`(${operators.displayPriority} = 0)`, asc(operators.displayPriority), asc(operators.name));
 }
 
 async function getListResult(
