@@ -1,9 +1,12 @@
 import Link from 'next/link';
 import { Card, SimpleGrid, Text } from '@mantine/core';
 import { buildListHref } from '@/shared/list/href';
-import type { OperatorCard } from '@/features/station/ports';
+import type { OperatorCard } from './operatorCard';
 
 // スコープ・検索語のどちらも無い一覧の空状態（Issue #94）。
+// 駅一覧・路線一覧の両方から使う汎用コンポーネントのため shared/list/ に置く
+// （features/station に置くと features/line からの利用が ADR-0001 の
+// feature 間依存ルールに抵触する）。
 // 全国10,625駅を無条件に読まない代わりに、まず事業者を選ばせる導線として
 // 事業者カード一覧を出す（クエリを伴わないリンクのみ。Server Component）。
 type Props = {

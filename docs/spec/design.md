@@ -33,16 +33,25 @@ external/query/stationListPageQuery.ts
 StationListContext (DTO) を返す
   ↓
 app/stations/page.tsx が描画
-  ├─ StationListToolbar ('use client')  … 事業者/路線セレクト・検索入力
-  ├─ OperatorPicker (Server Component)  … スコープ未選択時の事業者カード
-  ├─ SortableTh ('use client')          … 列ヘッダクリックでソート
-  └─ ListPagination ('use client')      … ページング
+  ├─ StationListToolbar ('use client')       … 事業者/路線セレクト・検索入力
+  ├─ shared/list/OperatorPicker (Server Component) … スコープ未選択時の事業者カード
+  ├─ SortableTh ('use client')               … 列ヘッダクリックでソート
+  └─ ListPagination ('use client')           … ページング
 ```
 
 `shared/list/`（ADR-0001 が定義、これまで未使用）を駅一覧・路線一覧の共通契約の
 置き場とする。Drizzle も Next.js 固有 API も import しない（`params.ts` /
-`href.ts`）。`SortableTh.tsx` / `ListPagination.tsx` は `next/navigation` を使うため
-Client Component だが、DB へは依存しない。
+`href.ts` / `operatorCard.ts`）。`SortableTh.tsx` / `ListPagination.tsx` /
+`OperatorPicker.tsx` は `next/navigation` や `next/link` を使うため Client
+Component（または `next/link` を使う Server Component）だが、DB へは依存しない。
+
+**PR2 で判明した設計変更**: `OperatorPicker` と `OperatorCard` 型は当初
+`features/station/components/` に置いたが、路線一覧（`features/line/`）からも
+同じコンポーネントを使う必要があり、これは ADR-0001 の feature 間依存ルール
+（許可された依存は `platform` / `station` / `stop-pattern` の組み合わせのみで、
+`line ⇄ station` は含まれない）に抵触する。`shared/list/OperatorPicker.tsx` +
+`shared/list/operatorCard.ts` へ移設し、両 feature の `ports.ts` がそこから
+`OperatorCard` 型を import する形にした。
 
 ### 層ごとの依存（ADR-0001 の再確認）
 

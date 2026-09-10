@@ -12,7 +12,6 @@ const legacyExclusions = {
     'src/app/stations/\\[stationId\\]/facilities/page.tsx',
     'src/app/operators/page.tsx',
     'src/app/operators/\\[operatorId\\]/edit/page.tsx',
-    'src/app/lines/page.tsx',
     'src/app/lines/\\[lineId\\]/directions/page.tsx',
     'src/app/trains/page.tsx',
     'src/app/api/stations/\\[stationId\\]/route.ts',

@@ -1,7 +1,7 @@
 import { Badge, ColorSwatch, Group, ScrollArea, Stack, Table, TableTbody, TableTd, TableTh, TableThead, TableTr, Text, Title } from '@mantine/core';
 import { LinkAnchor, LinkButton } from '@/components/LinkElements';
 import { STATION_LIST_SORT_KEYS, type StationListSort } from '@/features/station/ports';
-import { OperatorPicker } from '@/features/station/components/OperatorPicker';
+import { OperatorPicker } from '@/shared/list/OperatorPicker';
 import { StationListToolbar } from '@/features/station/components/StationListToolbar';
 import { ListPagination } from '@/shared/list/ListPagination';
 import { SortableTh } from '@/shared/list/SortableTh';
@@ -73,7 +73,7 @@ export default async function StationsPage({
               <Text size="sm" c="dimmed">({context.result.total}駅)</Text>
             </Group>
           ) : context.scope.operatorName ? (
-            <Text fw={500}>{context.scope.operatorName}の駅（{context.result.total}件）</Text>
+            <Text fw={500}>{context.scope.operatorName}の駅 ({context.result.total}件)</Text>
           ) : null}
 
           {context.result.total === 0 ? (

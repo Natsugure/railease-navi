@@ -1,5 +1,6 @@
 import type { StrollerDifficulty, WheelchairDifficulty } from '@furatora/database/enums';
 import type { ListParams, ListResult } from '@/shared/list/params';
+import type { OperatorCard } from '@/shared/list/operatorCard';
 import type { StationCreateInput } from './schema';
 
 // 読み取り: Query Service（ADR-0003）。駅の編集・新規ページが必要とする1画面分の DTO を返す。
@@ -116,9 +117,6 @@ export type StationListRow = {
   lineColor: string | null;
   operatorName: string;
 };
-
-// スコープ未選択時の空状態に出す事業者カード
-export type OperatorCard = { id: string; name: string; lineCount: number };
 
 export type StationListContext = {
   // 常に返す（事業者セレクトの選択肢。162件）

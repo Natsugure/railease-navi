@@ -3,9 +3,9 @@ import { lines, operators, stationLines, stations } from '@furatora/database/sch
 import { and, asc, count, desc, eq, ilike, or, sql, type SQL } from 'drizzle-orm';
 import { escapeLikePattern } from '@/shared/list/params';
 import type { ListParams, ListResult } from '@/shared/list/params';
+import type { OperatorCard } from '@/shared/list/operatorCard';
 import type {
-  OperatorCard, StationListContext, StationListPageQuery, StationListRow, StationListScope,
-  StationListSort,
+  StationListContext, StationListPageQuery, StationListRow, StationListScope, StationListSort,
 } from '@/features/station/ports';
 
 // 駅一覧（#94）。事業者スコープ化・検索・並び替え・ページングはすべて SQL 側で行い、

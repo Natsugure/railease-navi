@@ -75,6 +75,13 @@
 `stationLines.stationOrder` も書かない（ekidata に路線内順序を示す列が無く、
 `e_sort` は `station_cd` と同値。ODPT 由来の既存値は壊さない）。
 
+**結果として `stationOrder` は路線単位でほぼ全か無かになる**（実測 2026-09-10:
+10,294/10,625行がNULL。内訳は 全NULL 587路線 / 全設定 14路線 / 部分設定 1路線）。
+路線内の駅順を必要とする読み取り側は、`stationOrder` を主キーにしつつ
+`stations.ekidataStationCd`（路線内で連番になっている。例: 山手線は
+`1130201 大崎 → 1130202 五反田 → …`）を次点キーにして補う。
+Admin の駅一覧（Issue #94、`external/query/stationListPageQuery.ts`）がこの方式を採用している。
+
 ### `ekidataCompanyCd` / `ekidataLineCd` / `ekidataStationCd` は恒久的に nullable
 
 初回シードで突合できた既存行と、シードで新規作成した行には値が入っているが、

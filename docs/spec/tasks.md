@@ -9,7 +9,10 @@
 ## 進捗（2026-09-10）
 
 - PR1（`shared/list/` + 駅一覧の Query Service 化）: 実装・検証完了
-- PR2（路線一覧の Query Service 化）: 未着手
+- PR2（路線一覧の Query Service 化）: 実装・検証完了
+  - PR2 着手時に `OperatorPicker` / `OperatorCard` を `features/station/` から
+    `shared/list/` へ移設（ADR-0001 の feature 間依存ルールに抵触するため。
+    line ⇄ station は許可された依存ではない）
 
 ## フェーズ構成
 
@@ -95,29 +98,49 @@ PR2: 路線一覧
 
 ## PR2: 路線一覧
 
-- [ ] **TASK-4.1** `features/line/ports.ts` に追記: `LineListSort` /
-      `LINE_LIST_SORT_KEYS` / `LineListRow`（駅数列を含む）/ `LineListContext` /
-      `LineListPageQuery`
-- [ ] **TASK-4.2** `external/query/lineListPageQuery.ts` を新規作成。
+- [x] **TASK-4.0** `features/station/components/OperatorPicker.tsx` と
+      `OperatorCard` 型を `shared/list/`（`OperatorPicker.tsx` /
+      `operatorCard.ts`）へ移設。駅一覧側の import も追従（`app/stations/page.tsx`、
+      `features/station/ports.ts`、`external/query/stationListPageQuery.ts`）
+- [x] **TASK-4.1** `features/line/ports.ts` に追記: `LineListSort` /
+      `LINE_LIST_SORT_KEYS` / `LineListScope` / `LineListRow`（駅数列を含む）/
+      `LineListContext` / `LineListPageQuery`
+- [x] **TASK-4.2** `external/query/lineListPageQuery.ts` を新規作成。
       駅一覧と同じ契約（`ListParams` / `ListResult`）に従う。駅数は当該ページの
       路線IDのみ `inArray` + `GROUP BY` で畳む
-- [ ] **TASK-4.3** `features/line/components/LineListToolbar.tsx` を新規作成
+- [x] **TASK-4.3** `features/line/components/LineListToolbar.tsx` を新規作成
       （事業者セレクト + 検索。路線セレクトは無い）
-- [ ] **TASK-4.4** `app/lines/page.tsx` を全面書き換え
-- [ ] **TASK-4.5** `app/lines/loading.tsx` にツールバー分のスケルトンを追加
-- [ ] **TASK-4.6** `di.ts` に `lineListPageQuery` を配線
-- [ ] **TASK-4.7** `eslint.config.mjs` の `legacyExclusions` から
+- [x] **TASK-4.4** `app/lines/page.tsx` を全面書き換え
+- [x] **TASK-4.5** `app/lines/loading.tsx` にツールバー分のスケルトンを追加
+- [x] **TASK-4.6** `di.ts` に `lineListPageQuery` を配線
+- [x] **TASK-4.7** `eslint.config.mjs` の `legacyExclusions` から
       `src/app/lines/page.tsx` を除去
-- [ ] **TASK-4.8** `e2e/lines-list.spec.ts` を新規作成
-- [ ] Phase 4 検証: typecheck / lint / vitest / build / E2E
+- [x] **TASK-4.8** `e2e/lines-list.spec.ts` を新規作成（5ケース）
+
+### Phase 4: PR2 検証
+
+- [x] `pnpm run typecheck`（admin）→ エラー0
+- [x] `pnpm run lint`（admin、変更ファイル対象）→ 0 problems
+- [x] `pnpm exec vitest run`（admin）→ 333/333 passed（回帰なし）
+- [x] `pnpm exec next build`（admin）→ 成功
+- [x] 実データに対する直接 SQL 検証（Neon MCP）: JR東日本の路線数（86件）が
+      一覧の総件数と一致
+- [x] Playwright E2E: `e2e/lines-list.spec.ts` 5/5 pass。全スイート実行で
+      24件中23件 pass（1件は `operators.spec.ts` の既存不具合。下記参照）
 
 ### Phase 5: ドキュメントと引き渡し
 
-- [ ] `docs/domain/station-master-model.md` に `station_lines.station_order` の
+- [x] `docs/domain/station-master-model.md` に `station_lines.station_order` の
       NULL 実態（97%）と `ekidata_station_cd` フォールバックの事実を追記
-- [ ] `docs/adr/0009-*.md` のステータスを見直す（`Accepted` への昇格は
-      本番相当の検証を経てから。本 Issue のスコープでは `Proposed` のまま
-      残すかを最終確認する）
-- [ ] 後続 Issue の起票を検討: `station_order` のデータ移行、
-      `OperatorForm.tsx` の「表示優先度」ラベル関連付けの不具合（本 Issue の
-      作業中に E2E で偶発的に検出。未着手ファイルのため本 Issue では対応しない）
+- [x] ADR-0009 のステータスは `Proposed` のまま残す（実装・E2E検証は完了したが、
+      本番相当の負荷・運用を経た検証ではないため `Accepted` への昇格は見送る。
+      ADR README の「実装・検証を通過した」が本番相当の運用実績を含むかは
+      解釈の余地があるが、保守的に判断した）
+- [x] 後続 Issue の起票を検討（起票は開発者判断のため本 Issue では GitHub Issue
+      作成まで行わず、ここに記録するに留める）:
+      - `station_lines.station_order` のデータ移行（ekidata_station_cd から
+        補完し、フォールバックを解消する）
+      - `OperatorForm.tsx` の「表示優先度」ラベル関連付けの不具合。本 Issue の
+        作業中に E2E（`operators.spec.ts` 既存テスト）で偶発的に検出。
+        `getByLabel(/表示優先度/)` が要素を見つけられない。本 Issue が
+        触れていないファイルのため対応せず、事実の記録のみ行う
