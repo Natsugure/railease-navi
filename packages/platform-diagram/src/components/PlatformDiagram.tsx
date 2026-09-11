@@ -1,4 +1,5 @@
-import { PX_PER_METER, layoutRows, type Bounds } from '../domain/geometry';
+import type { ReactNode } from 'react';
+import { PX_PER_METER, layoutRows, type Bounds, type VerticalLayout } from '../domain/geometry';
 import type { ConcoursePlateLayout, FacingTransferLayout } from '../domain/concourseLayout';
 import type { ConcourseDTO, TrainStopPatternDTO } from '../domain/types';
 import { DiagramSvg } from './diagram/DiagramSvg';
@@ -24,6 +25,13 @@ type Props = {
   facingLayout: FacingTransferLayout;
   /** 設備アイコンPNGの配信元パス。DiagramSvg にそのまま渡す（既定 '/icons'） */
   iconBasePath?: string;
+  /**
+   * 編集レイヤ（admin の DiagramEditLayer）の差し込み口。SVGの要素ボックスと
+   * 完全に一致する `relative` ラッパの中に絶対配置で重なる。実際に使った rows を
+   * そのまま渡すので、呼び出し側で layoutRows() を再計算する必要が無い。
+   * web は未指定のまま（挙動不変）。
+   */
+  diagramOverlay?: (rows: VerticalLayout) => ReactNode;
 };
 
 export function PlatformDiagram({
@@ -35,6 +43,7 @@ export function PlatformDiagram({
   plateLayout,
   facingLayout,
   iconBasePath,
+  diagramOverlay,
 }: Props) {
   const { minX, maxX } = bounds;
   const width = maxX - minX;
@@ -59,18 +68,23 @@ export function PlatformDiagram({
       />
     ),
     diagram: (
-      <DiagramSvg
-        key="diagram"
-        cars={cars}
-        concourses={concourses}
-        physicalLength={physicalLength}
-        minX={minX}
-        width={width}
-        rows={rows}
-        plateGroups={plateLayout.groups}
-        facingBanners={facingLayout.banners}
-        iconBasePath={iconBasePath}
-      />
+      // relative 以外のクラスを足さないこと。h-full やgridのstretchを与えると
+      // SVGの要素ボックスがviewBoxのアスペクト比から外れ、内部の絶対配置オーバーレイの
+      // y座標が実測pxとずれる（x はxFractionの割合なので影響しない）。
+      <div key="diagram" className="relative">
+        <DiagramSvg
+          cars={cars}
+          concourses={concourses}
+          physicalLength={physicalLength}
+          minX={minX}
+          width={width}
+          rows={rows}
+          plateGroups={plateLayout.groups}
+          facingBanners={facingLayout.banners}
+          iconBasePath={iconBasePath}
+        />
+        {diagramOverlay?.(rows)}
+      </div>
     ),
     plates: (
       <ConcoursePlateRow
