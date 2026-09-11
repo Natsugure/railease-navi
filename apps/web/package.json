@@ -33,6 +33,7 @@
   },
   "dependencies": {
     "@furatora/database": "workspace:*",
+    "@furatora/platform-diagram": "workspace:*",
     "@mantine/core": "^8.3.14",
     "@mantine/hooks": "^8.3.14",
     "@next/third-parties": "^16.1.6",

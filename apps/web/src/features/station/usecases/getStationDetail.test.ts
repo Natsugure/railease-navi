@@ -2,7 +2,7 @@ import { describe, it, expect } from 'vitest';
 import { makeGetStationDetail } from './getStationDetail';
 import type { StationDetailQuery } from '../ports';
 import type { StationDetailDTO } from '../domain/types';
-import type { PlatformDTO } from '@/features/platform/domain/types';
+import type { PlatformDTO } from '@furatora/platform-diagram/domain';
 
 function platform(overrides: Partial<PlatformDTO> & { id: string }): PlatformDTO {
   return {

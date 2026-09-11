@@ -1,8 +1,14 @@
-import { computeBounds } from '../domain/geometry';
-import { layoutConcoursePlates, layoutFacingBanners } from '../domain/concourseLayout';
-import { connectionLabels, exitsLabel, hasDisplayableInfo } from '../domain/concourse';
-import type { ConcourseDTO, PlatformDTO } from '../domain/types';
-import { PlatformDiagram } from './PlatformDiagram';
+import {
+  computeBounds,
+  layoutConcoursePlates,
+  layoutFacingBanners,
+  connectionLabels,
+  exitsLabel,
+  hasDisplayableInfo,
+  type ConcourseDTO,
+  type PlatformDTO,
+} from '@furatora/platform-diagram/domain';
+import { PlatformDiagram } from '@furatora/platform-diagram/components';
 
 type Props = {
   platform: PlatformDTO;

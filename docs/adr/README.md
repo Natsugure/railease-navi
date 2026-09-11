@@ -59,6 +59,7 @@ furatora のアーキテクチャ決定は代替案の比較が主成分であ�
 | [0007](./0007-station-master-data-source.md) | 駅・路線マスタを ODPT 同期から駅データ.jp の初回シードに移行し、以後は手動で維持する | Accepted   | 2026-08-27 |
 | [0008](./0008-environment-database-branch-mapping.md) | 環境ごとに Neon ブランチを1対1で対応させ、マイグレーションをビルド時に適用する | Accepted   | 2026-09-01 |
 | [0009](./0009-list-query-server-side-scoping.md) | 一覧の絞り込み・並び替え・ページングをサーバー側で行い、URLクエリを唯一の状態源とする | Proposed   | 2026-09-10 |
+| [0010](./0010-platform-diagram-package-edit-layer.md) | ホーム図を packages に切り出し、閲覧は Server Component・編集は Client Component で層を分ける | Proposed   | 2026-09-11 |
 
 ## 関連ドキュメント
 
