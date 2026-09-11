@@ -1,5 +1,5 @@
 import type { StrollerDifficulty, WheelchairDifficulty } from '@furatora/database/enums';
-import type { DirectionTabDTO, PlatformDTO } from '@/features/platform/domain/types';
+import type { DirectionTabDTO, PlatformDTO } from '@furatora/platform-diagram/domain';
 
 // 駅詳細画面用のDTO定義。Drizzle非依存（ADR-0003）。
 // decimal → number の変換は external/query/ の中で行う。

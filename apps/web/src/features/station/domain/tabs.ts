@@ -1,4 +1,4 @@
-import type { DirectionTabDTO, PlatformDTO } from '@/features/platform/domain/types';
+import type { DirectionTabDTO, PlatformDTO } from '@furatora/platform-diagram/domain';
 
 /**
  * ホーム一覧を方面タブへ組み立てる（純関数・DB非依存）。

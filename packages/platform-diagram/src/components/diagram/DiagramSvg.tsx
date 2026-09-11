@@ -14,13 +14,16 @@ import type { ConcourseDTO, StopPatternCarDTO } from '../../domain/types';
 // 図の幾何だけを描く。文字はホーム両端の距離ラベルと号車番号しか持たない
 // （出口名・路線名・対面乗換の文はSVG外のHTMLオーバーレイにある）。
 
-const FACILITY_ICONS: Record<string, string> = {
-  elevator: '/icons/elevator.png',
-  escalator: '/icons/escalator.png',
-  stairs: '/icons/stairs.png',
-  ramp: '/icons/wheelchair_ramp.png',
-  stairLift: '/icons/stair_lift.png',
-  sameFloor: '/icons/wheelchair.png',
+// ファイル名だけを持つ。配信元は iconBasePath prop（既定 '/icons'）で決まる。
+// public/ はアプリごとに独立配信されるため、このパッケージを使う各アプリが
+// 自分の public/icons/ に同名ファイルを置く必要がある（README.md 参照）。
+const FACILITY_ICON_FILES: Record<string, string> = {
+  elevator: 'elevator.png',
+  escalator: 'escalator.png',
+  stairs: 'stairs.png',
+  ramp: 'wheelchair_ramp.png',
+  stairLift: 'stair_lift.png',
+  sameFloor: 'wheelchair.png',
 };
 
 const ICON_SIZE = 6;
@@ -41,6 +44,8 @@ type Props = {
   rows: VerticalLayout;
   plateGroups: ConcoursePlateGroup[];
   facingBanners: FacingTransferBanner[];
+  /** 設備アイコンPNGの配信元パス。各アプリの public/icons/ を指す（既定 '/icons'） */
+  iconBasePath?: string;
 };
 
 export function DiagramSvg({
@@ -52,6 +57,7 @@ export function DiagramSvg({
   rows,
   plateGroups,
   facingBanners,
+  iconBasePath = '/icons',
 }: Props) {
   const reversed = isDoorOrderReversed(cars);
   const leadingCar = cars.find((c) => c.carNumber === 1) ?? cars[0];
@@ -113,11 +119,11 @@ export function DiagramSvg({
         .map((cell, idx) =>
           cell.facilities.map((facility, fIdx) => {
             const x = cell.xPositionMeters! + (fIdx - (cell.facilities.length - 1) / 2) * (ICON_SIZE + 1);
-            const iconHref = FACILITY_ICONS[facility.typeCode];
-            return iconHref ? (
+            const iconFile = FACILITY_ICON_FILES[facility.typeCode];
+            return iconFile ? (
               <image
                 key={`${cell.concourseId}-${idx}-${fIdx}`}
-                href={iconHref}
+                href={`${iconBasePath}/${iconFile}`}
                 x={x - ICON_SIZE / 2}
                 y={rows.facilityY + (FACILITY_ROW_HEIGHT - ICON_SIZE) / 2}
                 width={ICON_SIZE}

@@ -26,7 +26,7 @@ import type {
   PlatformDTO,
   StopPatternCarDTO,
   TrainStopPatternDTO,
-} from '@/features/platform/domain/types';
+} from '@furatora/platform-diagram/domain';
 
 // apps/admin/src/external/query/stopPatternPageQuery.ts のスタイルを踏襲する。
 // decimal → number の変換はすべてここで完結させる（DTOより上に string を渡さない）。

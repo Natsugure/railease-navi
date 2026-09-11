@@ -22,6 +22,8 @@ type Props = {
   plateLayout: ConcoursePlateLayout;
   /** 対面乗換バナーの配置。同上 */
   facingLayout: FacingTransferLayout;
+  /** 設備アイコンPNGの配信元パス。DiagramSvg にそのまま渡す（既定 '/icons'） */
+  iconBasePath?: string;
 };
 
 export function PlatformDiagram({
@@ -32,6 +34,7 @@ export function PlatformDiagram({
   bounds,
   plateLayout,
   facingLayout,
+  iconBasePath,
 }: Props) {
   const { minX, maxX } = bounds;
   const width = maxX - minX;
@@ -66,6 +69,7 @@ export function PlatformDiagram({
         rows={rows}
         plateGroups={plateLayout.groups}
         facingBanners={facingLayout.banners}
+        iconBasePath={iconBasePath}
       />
     ),
     plates: (

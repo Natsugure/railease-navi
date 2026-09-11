@@ -3,6 +3,7 @@
   "references": [
     { "path": "./apps/web" },
     { "path": "./apps/admin" },
-    { "path": "./packages/database" }
+    { "path": "./packages/database" },
+    { "path": "./packages/platform-diagram" }
   ]
 }

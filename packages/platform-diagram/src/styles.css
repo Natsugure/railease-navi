@@ -1,0 +1,65 @@
+/* ============================================================
+   @furatora/platform-diagram — デザイントークン
+   ============================================================
+   ホーム図（PlatformDiagram / DiagramSvg / ConcoursePlateRow /
+   FacingTransferBannerRow）が使うCSS変数。apps/web の globals.css に
+   あった primitive scale（--gray-* 等）には依存しない、解決済みの
+   具体値として定義する（ADR-0010）。apps/web と apps/admin の両方の
+   layout.tsx が1回だけ import する。
+
+   apps/web 側では従来これらの変数を --gray-* 等の primitive scale から
+   参照していたが、admin が web の primitive scale 全体を取り込む必要を
+   無くすため、このファイルへの移設と同時に解決済みの値に変えた。
+   見た目は変わらない（挙動不変）。
+*/
+
+:root {
+  /* カード・図の背景・枠線・文字色 */
+  --color-bg-card: #ffffff;
+  --color-border-default: #e0e0e0;
+  --color-border-strong: #cccccc;
+  --color-text-primary: #222222;
+  --color-text-secondary: #666666;
+
+  /* 号車 */
+  --color-train-car-bg: #d6d3d1;
+  --color-train-car-border: #a8a29e;
+  --color-car-number-bg: rgba(255, 255, 255, 0.9);
+
+  /* フリースペース */
+  --color-free-standard: #4072b3;
+  --color-free-standard-text: #ffffff;
+  --color-free-nonstandard: #a5c0e6;
+  --color-free-nonstandard-text: #1a2d4e;
+
+  /* 駅サイン様式（出口・乗換プレート） */
+  --sign-exit-bg: #ffd400;
+  --sign-exit-ink: #111111; /* 黄地とのコントラスト比 約13:1 */
+  --sign-exit-edge: #c99a00; /* 白背景から浮かせないための輪郭 */
+
+  --sign-transfer-bg: #ffffff;
+  --sign-transfer-edge: #111111;
+  --sign-transfer-ink: #222222;
+  --sign-transfer-note: #666666;
+
+  --sign-boarding-mark: #aaaaaa; /* 乗車位置目標（通常のドア） */
+  --sign-leader: #aaaaaa; /* 束ね線と引き出し線 */
+
+  /* フリースペース詳細・優先席カード */
+  --card-transfer-bg: #ebf1fa;
+  --card-transfer-border: #4072b3;
+  --card-transfer-heading: #264370;
+
+  --card-prio-bg: #fff8e1;
+  --card-prio-border: #ffe082;
+  --card-prio-heading: #ffb300;
+
+  /* 号車番号・出口プレート等の書体。next/font/google の BIZ_UDPGothic を
+     variable: '--font-biz-udpgothic' で各アプリの layout.tsx が読み込む前提。
+     web の元定義から var(--font-noto-sans-jp) だけ外している
+     （admin はこの変数を定義しないため。CSSのvar()はフォールバック無しで
+     未定義だとプロパティ全体が無効になるので、汎用フォント名に差し替えた） */
+  --font-sign: var(--font-biz-udpgothic), "BIZ UDPGothic", "BIZ UDGothic",
+    "Hiragino Kaku Gothic ProN", "Yu Gothic Medium", "YuGothic", system-ui,
+    sans-serif;
+}

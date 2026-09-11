@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { buildDirectionTabs } from './tabs';
-import type { PlatformDTO } from '@/features/platform/domain/types';
+import type { PlatformDTO } from '@furatora/platform-diagram/domain';
 
 function platform(overrides: Partial<PlatformDTO> & { id: string }): PlatformDTO {
   return {

@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import { PlatformDisplay } from './PlatformDisplay';
-import type { DirectionTabDTO } from '../domain/types';
+import type { DirectionTabDTO } from '@furatora/platform-diagram/domain';
 
 type Props = {
   tabs: DirectionTabDTO[];

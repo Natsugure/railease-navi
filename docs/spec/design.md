@@ -1,238 +1,316 @@
-# 設計: 駅・路線一覧を事業者スコープ化し、絞り込みと並び替えを追加する (Issue #94)
+# 設計: 駅の設備編集を図ベースの単一ページに統合する (Issue #95)
 
 - **参照**: [requirements.md](./requirements.md) / [tasks.md](./tasks.md) /
-  ADR-0001 / ADR-0002 / ADR-0003 / [ADR-0009](../adr/0009-list-query-server-side-scoping.md)
-- **作成日**: 2026-09-10
+  ADR-0001 / ADR-0002 / ADR-0003 / ADR-0005 / ADR-0006 / ADR-0009 /
+  [ADR-0010](../adr/0010-platform-diagram-package-edit-layer.md)
+- **作成日**: 2026-09-11
 
 ## 適応的実行戦略
 
-信頼度88%（高）。段階的実装に進む。唯一の新規アーキテクチャ判断は
-ADR-0009（一覧の絞り込みをサーバー側で行う契約）で、これは実装着手前に決定済み。
-PoC は設けない。
+信頼度70%（中）。PoC/MVP を優先する。PR1（パッケージ切り出し）とPR2（読み取り専用の
+統合ページ）を先に完成・検証し、そこで得られた実データ描画の確認を土台にPR3（図上編集）
+に進む。PR3 自体が本アプリで前例のないドラッグ編集の新規実装であるため、PR3 着手前に
+本ファイルの「編集レイヤの座標変換」節を実装しながら再検証する。
 
 ## PR 構成
 
 ```
-PR1: 仕様整備 + ADR-0009 + shared/list/ + 駅一覧
-  └─ PR2: 路線一覧（PR1 の契約を2画面目で検証）
+PR1: 仕様整備 + ADR-0010 + packages/platform-diagram 新設（web 移行、挙動不変）
+  └─ PR2: 読み取り専用の統合ページ（Query Service + 図表示のみ）
+      └─ PR3: アクセス点・停車位置の図上編集（ドラッグ + スナップ + 保存）
+          └─ PR4: テキストフォーム統合 / 複製フロー刷新(#31) / 路線自動設定(#32①) / #51 見える化
+              └─ PR5: 旧ルート削除・リダイレクト / docs/domain 更新 / legacyExclusions 解消
 ```
 
-## 全体アーキテクチャ
+**PR1 を独立させる理由**: パッケージ切り出しは挙動不変のリファクタなので、web が
+壊れていないことだけで検証が完結する。図編集の設計と混ざらない。
+
+## 全体アーキテクチャ（PR1時点）
 
 ```
-app/stations/page.tsx (Server Component)
-  │ searchParams (Promise) を解析
-  ├─ parseUuidParam(operatorId, lineId)      shared/list/params.ts
-  ├─ parseListParams<StationListSort>(...)   shared/list/params.ts
-  ↓
-di.ts → stationListPageQuery.getListContext(scope, params)
-  ↓
-external/query/stationListPageQuery.ts
-  │ Drizzle。WHERE / ORDER BY / LIMIT OFFSET はすべてここで組み立てる
-  ↓
-StationListContext (DTO) を返す
-  ↓
-app/stations/page.tsx が描画
-  ├─ StationListToolbar ('use client')       … 事業者/路線セレクト・検索入力
-  ├─ shared/list/OperatorPicker (Server Component) … スコープ未選択時の事業者カード
-  ├─ SortableTh ('use client')               … 列ヘッダクリックでソート
-  └─ ListPagination ('use client')           … ページング
+apps/web/src/features/platform/          apps/admin/src/features/station-layout/（PR2以降）
+  components/PlatformDisplay.tsx           ports.ts
+  components/PlatformTabs.tsx              components/StationLayoutEditor.tsx  ('use client')
+        │  （web固有。パッケージ化しない）  components/DiagramEditLayer.tsx     (PR3)
+        │                                   components/inspector/*.tsx          (PR4)
+        └──────────────┬────────────────────────────┘
+                        ▼
+             packages/platform-diagram
+               src/domain/    geometry / lanes / consist / doorOrder /
+                              concourse / concourseLayout / types / snap(PR3で追加)
+               src/components/ PlatformDiagram / DiagramSvg /
+                               ConcoursePlateRow / FacingTransferBannerRow
+               src/styles.css  --sign-* 等のトークン（解決済みの値。web の primitive
+                               scale には依存しない自己完結パッケージ）
 ```
 
-`shared/list/`（ADR-0001 が定義、これまで未使用）を駅一覧・路線一覧の共通契約の
-置き場とする。Drizzle も Next.js 固有 API も import しない（`params.ts` /
-`href.ts` / `operatorCard.ts`）。`SortableTh.tsx` / `ListPagination.tsx` /
-`OperatorPicker.tsx` は `next/navigation` や `next/link` を使うため Client
-Component（または `next/link` を使う Server Component）だが、DB へは依存しない。
+**依存の向き**: `apps/*/features/*` → `packages/platform-diagram`。パッケージは
+Next.js にも `@furatora/database` にも依存しない。
 
-**PR2 で判明した設計変更**: `OperatorPicker` と `OperatorCard` 型は当初
-`features/station/components/` に置いたが、路線一覧（`features/line/`）からも
-同じコンポーネントを使う必要があり、これは ADR-0001 の feature 間依存ルール
-（許可された依存は `platform` / `station` / `stop-pattern` の組み合わせのみで、
-`line ⇄ station` は含まれない）に抵触する。`shared/list/OperatorPicker.tsx` +
-`shared/list/operatorCard.ts` へ移設し、両 feature の `ports.ts` がそこから
-`OperatorCard` 型を import する形にした。
+### パッケージの公開面（package.json exports）
 
-### 層ごとの依存（ADR-0001 の再確認）
-
-| ファイル | 層 | 依存してよいもの |
-|---|---|---|
-| `shared/list/params.ts` `href.ts` | shared | なし（純粋関数） |
-| `shared/list/SortableTh.tsx` `ListPagination.tsx` | shared | `next/navigation`, `@mantine/core` |
-| `features/station/ports.ts` | features/ports | なし（`@furatora/database/enums` のみ例外） |
-| `external/query/stationListPageQuery.ts` | external | `@furatora/database`, `drizzle-orm` |
-| `app/stations/page.tsx` | app | 上記すべて + `next/navigation` |
-
-## Server Component → Client Component の関数 props 制約
-
-RSC はシリアライズ不可能な値（関数）を Server → Client の props 境界を越えて
-渡せない。実装中に2件この制約に抵触し、設計を修正した。
-
-1. **`SortableTh` / `ListPagination` に `buildHref: (next) => string` を渡す案は
-   採用しなかった。** 代わりに `current`（現在の URL 状態オブジェクト）・
-   `basePath`・`defaults` をデータとして渡し、`buildListHref` はこれらの
-   Client Component が内部で呼ぶ。
-2. **`OperatorPicker`（Server Component）で `<Card component={Link} href={...}>`
-   は使えない。** Mantine の `Card` は Client Component であり、`component` prop に
-   関数（`Link`）を渡すことは Server → Client 境界を越える関数渡しになり
-   `"Functions cannot be passed directly to Client Components"` で失敗する。
-   `<Link href={...}><Card>...</Card></Link>`（`Link` で `Card` を包み、children
-   として渡す）に変更した。children として渡す要素は事前にレンダリングされた
-   React 要素であり、関数渡しには当たらない。
-
-## データフロー: 駅一覧
-
-### URL 契約
-
-```
-/stations?operatorId=&lineId=&q=&sort=&order=&page=
-```
-
-| 状態 | 表示 | 発行クエリ |
-|---|---|---|
-| すべて未指定 | 事業者カード一覧（`OperatorPicker`） | 事業者セレクト用 + カード用（GROUP BY） |
-| `q` のみ | 全国横断の部分一致結果（事業者・路線列を表示） | 一覧 + `count(*)` |
-| `operatorId` | その事業者の駅（路線列を表示） | 路線セレクト + 一覧 + `count(*)` |
-| `operatorId` + `lineId` | その路線の駅（路線列を隠し見出しに出す） | 同上 |
-
-### `StationListContext`（DTO。ADR-0003 の制約: JSON シリアライズ可能、UI 固有値を含まない）
-
-```ts
-// features/station/ports.ts
-export type StationListSort = 'line' | 'code' | 'name' | 'published';
-
-export type StationListRow = {
-  id: string; name: string; nameEn: string | null; code: string | null;
-  publishedAt: string | null;   // ISO文字列（Date のまま返さない）
-  stationOrder: number | null;
-  lineId: string; lineName: string; lineColor: string | null; operatorName: string;
-};
-
-export type StationListContext = {
-  operators: OperatorOption[];        // 常に返す（事業者セレクト。162件）
-  operatorCards: OperatorCard[];      // スコープ・検索語が無いときだけ（空状態のカード）
-  lines: LineOption[];                // operatorId 指定時のみ
-  scope: { operatorName: string | null; lineName: string | null; lineColor: string | null };
-  result: ListResult<StationListRow> | null;  // 何も無いときは null（クエリ未発行）
-};
-
-export interface StationListPageQuery {
-  getListContext(
-    scope: { operatorId?: string; lineId?: string },
-    params: ListParams<StationListSort>,
-  ): Promise<StationListContext>;
+```json
+{
+  "name": "@furatora/platform-diagram",
+  "exports": {
+    "./domain": "./src/domain/index.ts",
+    "./components": "./src/components/index.ts",
+    "./styles.css": "./src/styles.css"
+  }
 }
 ```
 
-`shared/list/params.ts` の共通型:
+`@furatora/database` の `exports` 方式（コンパイル済みJSを持たず raw .ts をそのまま
+公開する）を踏襲する。Next.js の既定のワークスペース解決で動くため、明示的な
+`transpilePackages` は不要と見込むが、PR1 の検証で client component（PR3以降で
+`'use client'` の編集レイヤから import される）のバンドルに問題が出た場合は
+`next.config.ts` を新設して `transpilePackages: ['@furatora/platform-diagram']` を足す
+（`apps/web` `apps/admin` は現在 `next.config.ts` を持たず Next.js の既定設定のみで
+動いている）。
+
+### CSS の取り込み方
+
+`styles.css` は Mantine の `@mantine/core/styles.css` と同じ形（layout.tsx での
+JS import）で取り込む。CSS の `@import` ではなく JS 側 import にするのは、
+このリポジトリで既に動作実績のある方法だから。
 
 ```ts
-export type SortOrder = 'asc' | 'desc';
-export type ListParams<TSort extends string> = {
-  q: string | null; sort: TSort; order: SortOrder; page: number; perPage: number;
-};
-export type ListResult<TRow> = { rows: TRow[]; total: number; page: number; perPage: number };
+// apps/web/src/app/layout.tsx / apps/admin/src/app/layout.tsx
+import '@furatora/platform-diagram/styles.css';
 ```
 
-### SQL 組み立て（`external/query/stationListPageQuery.ts`）
+`styles.css` のトークンは web の `globals.css` にある `--gray-*` 等の primitive scale を
+参照せず、**解決済みの具体値**で定義する（下記「移設対象のCSS変数」）。これにより
+admin が web の primitive scale 全体（orange/red/green 等、図に無関係な色）を
+取り込む必要がなくなる。
 
-- スコープ: `operatorId` → `eq(lines.operatorId, ...)`、`lineId` →
-  `eq(stationLines.lineId, ...)`（両方指定時は AND）
-- 検索: `or(ilike(stations.name, p), ilike(stations.nameEn, p), ilike(stations.code, p))`、
-  `p = '%' + escapeLikePattern(q) + '%'`
-- 並び替え（`StationListSort` → Drizzle 式。詳細は requirements.md「並び順の
-  フォールバック」）:
+### 移設対象のCSS変数（`packages/platform-diagram/src/styles.css`）
 
-  | sort | ORDER BY |
-  |---|---|
-  | `line`（既定） | `lines.displayOrder`, `stationLines.stationOrder ASC NULLS LAST`, `stations.ekidataStationCd ASC NULLS LAST`, `stations.id ASC` |
-  | `name` | `stations.nameKana`, `stations.id ASC` |
-  | `code` | `stations.code ASC/DESC NULLS LAST`, `stations.id ASC` |
-  | `published` | `stations.publishedAt ASC/DESC NULLS LAST`, `stations.id ASC` |
+| 変数 | 現在の定義（`apps/web/src/app/globals.css`） | 移設後の値 |
+|---|---|---|
+| `--color-bg-card` | `var(--gray-0)` | `#FFFFFF` |
+| `--color-border-default` | `var(--gray-200)` | `#E0E0E0` |
+| `--color-border-strong` | `var(--gray-300)` | `#CCCCCC` |
+| `--color-text-primary` | `var(--gray-800)` | `#222222` |
+| `--color-text-secondary` | `var(--gray-600)` | `#666666` |
+| `--color-train-car-bg` | `#D6D3D1`（直値） | 同じ |
+| `--color-train-car-border` | `#A8A29E`（直値） | 同じ |
+| `--color-car-number-bg` | `rgba(255,255,255,0.9)`（直値） | 同じ |
+| `--color-free-standard` | `var(--blue-500)` | `#4072B3` |
+| `--color-free-standard-text` | `var(--gray-0)` | `#FFFFFF` |
+| `--color-free-nonstandard` | `var(--blue-200)` | `#A5C0E6` |
+| `--color-free-nonstandard-text` | `var(--blue-800)` | `#1A2D4E` |
+| `--sign-exit-bg` | `#FFD400`（直値） | 同じ |
+| `--sign-exit-ink` | `#111111`（直値） | 同じ |
+| `--sign-exit-edge` | `#C99A00`（直値） | 同じ |
+| `--sign-transfer-bg` | `var(--gray-0)` | `#FFFFFF` |
+| `--sign-transfer-edge` | `#111111`（直値） | 同じ |
+| `--sign-transfer-ink` | `var(--color-text-primary)` | `#222222` |
+| `--sign-transfer-note` | `var(--color-text-secondary)` | `#666666` |
+| `--sign-boarding-mark` | `var(--gray-400)` | `#AAAAAA` |
+| `--sign-leader` | `var(--gray-400)` | `#AAAAAA` |
+| `--card-transfer-bg` | `var(--color-primary-subtle)` | `#EBF1FA` |
+| `--card-transfer-border` | `var(--color-primary)` | `#4072B3` |
+| `--card-transfer-heading` | `var(--color-primary-text)` | `#264370` |
+| `--card-prio-bg` | `var(--color-warning-subtle)` | `#FFF8E1` |
+| `--card-prio-border` | `var(--color-warning-muted)` | `#FFE082` |
+| `--card-prio-heading` | `var(--color-warning-text)` | `#FFB300` |
+| `--font-sign` | `var(--font-biz-udpgothic), "BIZ UDPGothic", ...` | 変更なし（フォント変数名は両アプリで揃える） |
 
-  `order=desc` で反転するのは選択中のキーのみ。フォールバックと末尾の
-  `stations.id ASC` は常に固定する（OFFSET ページングの安定性）。
-- 一覧本体と `count(*)` は `Promise.all` で並列発行する
-- `showResult = Boolean(scope.operatorId || scope.lineId || params.q)` が false の
-  ときは `result: null` を返し、一覧・件数のクエリを発行しない
+**`apps/web/src/app/globals.css` からは削除しない。** 上表のうち
+`--color-bg-card` / `--color-border-default` / `--color-border-strong` /
+`--color-text-primary` / `--color-text-secondary` の5つは、当初 platform 図専用と
+見立てていたが、実際は `@theme inline` 経由で `body` の背景色・文字色
+（`--color-foreground` 等）にも使われている **web アプリ全体の基盤トークン**だった
+（削除すると web 全体の見た目が壊れる）。値が完全に一致する解決済みコピーを
+パッケージの `styles.css` にも持たせるだけに留め、web 側の定義は一切変更しない
+（web は `styles.css` を import する必要も無い。既存の定義で完結している）。
+これはPR1着手前の設計時点では platform 専用と誤って見積もっていた点で、
+実装時にCSS変数の実使用箇所を確認して修正した。
 
-### 検証済みの実データ挙動（2026-09-10, Neon `development` に対する直接クエリで確認）
+パッケージの `styles.css` を実際に import して恩恵を受けるのは **admin のみ**（PR2）。
+web 固有の primitive scale（`--gray-*` 等）自体は web に残す（`PlatformDisplay.tsx` 等、
+パッケージ化しない web 固有コンポーネントが今後も使うため）。
 
-- JR東日本スコープ（86路線・1,961駅）の上記 ORDER BY で、各路線の駅は
-  連続したブロックとして並ぶ（`lines.displayOrder` が実質0でタイしていても、
-  `ekidataStationCd` のブロック構造により路線をまたいだ混在は発生しない。
-  86路線 = 86ブロックであることを window 関数で確認済み）
-- `name_kana` ソートは 秋葉原→池袋→上野→鶯谷→恵比寿→大崎 の五十音順になる
-  （山手線で確認済み）
-- LIKE エスケープ無しで `q='_'` を検索すると全10,625駅にヒットする
-  （`_` はワイルドカードとして「任意の1文字」を意味するため）。
-  `escapeLikePattern` 適用後は 0 件（実データに文字どおりの `_` を含む駅名は無い）。
-  この差分により `escapeLikePattern` の必要性を実データで確認した
+### フォント（`--font-sign`）
 
-## データフロー: 路線一覧
+`apps/admin/src/app/layout.tsx` に `next/font/google` の `BIZ_UDPGothic` を追加し、
+`variable: '--font-biz-udpgothic'` を `body` の `className` に適用する（web の
+`layout.tsx` と同じパターン）。
 
-駅一覧と同じ形。差分のみ記載する。
+### アイコン（`/icons/*.png`）
 
-- URL: `/lines?operatorId=&q=&sort=&order=&page=`（`lineId` は無い。一覧そのものが
-  路線なので路線スコープの概念が無い）
-- `LineListSort`: `'displayOrder' | 'name' | 'lineCode' | 'operator'`
-  - `name` は `lines.nameKana`（`stations` と同じ collation 制約）
-  - `operator` は `operators.name`
-- 検索: 路線名 / `lineCode` / 事業者名の部分一致
-- 行に **駅数** 列を追加する。`inArray(lines.id, pageLineIds)` で当該ページの
-  路線IDだけ `count(stationLines.stationId)` を `GROUP BY` して Map で畳む
-  （`facilityEditPageQuery.ts` の畳み込みイディオムを踏襲。ページ内の路線だけを
-  対象にするため602件の集計にはならない）
-- 空状態は駅一覧と同じ `OperatorPicker`（`basePath="/lines"`）
-- 「編集 / 方面を管理 / 隣接を管理」の操作列は現行を踏襲する
+`DiagramSvg` の `FACILITY_ICONS` は絶対パス `/icons/elevator.png` 等を直書きしている。
+**`iconBasePath` prop を新設**し、既定値 `/icons` を渡せば web は無変更で動く。
+admin は `apps/admin/public/icons/` を新設し web の6ファイル（elevator / escalator /
+stairs / wheelchair_ramp / stair_lift / wheelchair）をコピーする（`public/` は
+アプリごとに独立して配信されるため、パッケージからは配信できず複製が必要。
+パッケージ README に複製元・複製理由を明記する）。
+
+```tsx
+// packages/platform-diagram/src/components/diagram/DiagramSvg.tsx
+type Props = {
+  // ...
+  /** 設備アイコンPNGの配信元パス。既定 '/icons'（各アプリの public/icons/ を指す） */
+  iconBasePath?: string;
+};
+```
+
+## Server / Client 境界（PR2以降）
+
+- `app/stations/[stationId]/layout/page.tsx` は Server Component。
+  `stationLayoutPageQuery.getContext(stationId, { platformId, patternId })` を1本だけ呼ぶ
+- 図・編集レイヤ・インスペクタは1つの Client Component ツリー
+  （`StationLayoutEditor`、PR3で新設）。DTO は props で渡し、関数は渡さない
+  （#94 design.md「Server Component → Client Component の関数 props 制約」と同じ理由）
+- ホームタブ・停車パターン切替は `router.push` で URL を更新し Server が再取得する
+- ADR-0010「却下した選択肢」参照: ADR-0006 が却下した「Client 化して実測」は
+  **表示のためだけに**境界を持ち込むことへの却下であり、編集ビューがポインタ操作を
+  必要とすることとは別の理由に基づく
+
+### URL 契約（PR2以降、ADR-0009に倣う）
+
+```
+/stations/[stationId]/layout?platformId=&patternId=
+```
+
+| クエリ | 意味 | 未指定時 |
+|---|---|---|
+| `platformId` | 選択中のホームタブ | 表示順の先頭のホーム |
+| `patternId` | 図に重ねる停車位置パターン | そのホームの先頭のパターン |
+
+選択中の要素（アクセス点など）は URL に載せない。保存のたびに `platformLocationCells.id`
+が変わる（全置換書き込みのため）ため、クライアント state で持つ。
+
+## データフロー（PR2、`stationLayoutPageQuery`）
+
+```ts
+// apps/admin/src/features/station-layout/ports.ts
+export type StationLayoutContext = {
+  stationName: string;
+  platforms: LayoutPlatformDTO[];        // タブ用の軽量情報（全ホーム）
+  platform: LayoutPlatformDetailDTO;     // 選択中のホーム1本の全データ
+  lines: LineWithDirections[];           // 選択肢。サーバーが完全にネストして渡す（#49方式）
+  facilityTypes: FacilityTypeOption[];
+  connectedStations: ConnectedStationOption[];
+  trains: TrainOption[];
+};
+
+export interface StationLayoutPageQuery {
+  // 駅が無ければ null（ページは notFound() する）
+  getContext(
+    stationId: string,
+    selection: { platformId?: string; patternId?: string },
+  ): Promise<StationLayoutContext | null>;
+}
+```
+
+`LayoutPlatformDetailDTO` は `packages/platform-diagram` の `PlatformDTO`（`domain/types.ts`）
+と同じ形を土台に、編集専用フィールド（`platformLocationCells.id` 等、パッケージの
+純粋な表示DTOには不要なID群）を追加したもの。`decimal` → `number` の変換は
+`external/query/stationLayoutPageQuery.ts` の中で行う（既存規約）。
+
+現在 `facilities/page.tsx`（312行）が `db` を直接 import して7本のクエリを直書きして
+いるのを、この1本に集約する。`eslint.config.mjs` の `legacyExclusions` から
+`facilities/page.tsx` を PR5 で削除する。
+
+## 編集レイヤの座標変換（PR3）
+
+パッケージの図の上に、`xFraction()` で位置合わせした絶対配置のハンドルを重ねる。
+SVG のピクセル座標には触らない（層をまたぐ x は必ず割合で取る、というADR-0006の規約）。
+
+px→m の逆変換は現在存在しないため新規実装する。
+
+```ts
+// packages/platform-diagram/src/domain/snap.ts
+export function pxToMeters(px: number, bounds: Bounds, canvasWidthPx: number): number;
+
+export function snapMeters(
+  raw: number,
+  candidates: number[],           // 号車境界 / ドア中心 / 0 / physicalLength
+  opts: { gridMeters: number; toleranceMeters: number },
+): number;
+
+export function roundToDecimal2(x: number): number;
+```
+
+- スナップ候補: `doorCentersX()`（既存）の全ドア中心、各号車の `startMeters`/`endMeters`、
+  `0`、`physicalLength`
+- 許容範囲 0.4m（= 2px @ 5px/m）以内なら候補に吸着。外れていれば 0.5m グリッドへ丸める
+- Alt 押下中はスナップを解除し `roundToDecimal2` のみ適用
+- すべて純関数。Vitest でグリッド／号車境界／ドア中心／許容範囲外／負座標／範囲外の
+  各ケースをテストする
+
+**bounds の凍結**: `computeBounds()` は全座標から算出するため、要素を右へドラッグすると
+bounds が広がって図全体がスケールし直し、ドラッグが暴れる。ドラッグ開始時の bounds を
+`DiagramEditLayer` の state に固定し、ドロップ後に再計算する。
+
+**範囲外・負座標**: `platform-coordinate-system.md`「バリデーションで範囲を制限しない」を
+守る。`[0, physicalLength]` の外へドラッグできるようにし、警告もブロックもしない。
+
+## 保存（PR3〜PR4）
+
+新しい API ルートは作らない。
+
+| 操作 | エンドポイント |
+|---|---|
+| コンコース更新 | `PUT /api/stations/{sid}/platform-locations/{lid}` |
+| コンコース新規 | `POST /api/stations/{sid}/platform-locations` |
+| ホーム基本情報 | `POST` / `PUT /api/stations/{sid}/platforms[/{pid}]` |
+| 停車パターン | `POST` / `PUT /api/stations/{sid}/train-stop-patterns[/{pid}]` |
+| 各削除 | 既存の `DELETE` |
+
+- ドラッグ結果はクライアント state に溜め、対象アグリゲートに「●未保存」バッジを出す
+- 保存は該当アグリゲートのみ。「すべて保存」ボタンは作らない（複数アグリゲートの
+  逐次保存は原子的でなく、1ボタンで見せると誤った保証になる）
+- ホームタブ切替・パターン切替・ページ離脱時に未保存があれば Mantine の `Modal` で確認
+- 保存後は `platformLocationCells.id` が変わる（全置換書き込み）ため、選択状態は
+  `(concourseId, xPositionMeters)` で復元する。復元できなければ選択を解除する
+
+**複製フロー（#31、PR4）**: 既存 `POST .../duplicate` は使わない。クライアント側で
+コンコースをコピーし「未保存の新規コンコース」として図に出し、x をずらしてから
+`POST` で保存する。`duplicate` エンドポイントと `FacilityDuplicateButton` は
+PR5（旧ルート削除）で一緒に削除する。
+
+## 座標を持たない要素（#51 見える化、PR4）
+
+図の下に専用セクションを置き、`xPositionMeters === null` のアクセス点を持つコンコースを
+列挙する。「位置を入力」ボタンで図の中央付近に仮置きし選択状態にする（未保存）。
 
 ## エラーハンドリング
 
 | ケース | 挙動 |
 |---|---|
-| `operatorId` / `lineId` が UUID 形式でない | `parseUuidParam` が `undefined` にフォールバック（未指定と同じ扱い）。500 にしない |
-| `sort` が未知の値 | `parseListParams` が `defaultSort` にフォールバック |
-| `order` が `asc`/`desc` 以外 | `asc` にフォールバック |
-| `page` が数値でない・0以下・小数 | `1` にフォールバック |
-| 該当0件 | 「該当する駅（路線）が見つかりません。」を表示し、テーブル・ページングを描画しない |
-
-いずれも実測で500にならないことを確認済み（`?sort=bogus&page=-1&operatorId=not-a-uuid`
-で `heading "駅"` が正常に表示されることを E2E で検証）。
+| `platformId` / `patternId` が UUID 形式でない、または当該駅に属さない | 表示順の先頭にフォールバック（500にしない。#94の `parseUuidParam` と同じ思想） |
+| 保存中に 409（`DuplicateStopPatternError` 等） | 既存 `TrainStopPatternForm.tsx` と同じ文言でメッセージ表示 |
+| 保存中に 404（駅スコープ外） | Mantine notification でエラー表示、ページはリロードしない |
+| ドラッグ座標が `[0, physicalLength]` の外 | ブロックしない（仕様） |
+| 未保存のままホームタブ・パターン切替 | 確認モーダルを出す |
 
 ## ユニットテスト戦略
 
-- `shared/list/params.test.ts`: `parseListParams`（既定値・不正値フォールバック・
-  配列値・空白トリム）、`parseUuidParam`（正常/不正/未指定/配列）、
-  `escapeLikePattern`（`% _ \` のエスケープ）
-- `shared/list/href.test.ts`: `buildListHref`（パッチ適用・null でキー削除・
-  既定値の非出力・`resetPageOn` による page リセット）
-- Query Service（`stationListPageQuery.ts` / `lineListPageQuery.ts`）は
-  ユニットテストを設けない。`apps/CLAUDE.md` の方針どおり Route Handler は
-  DI モックでテストするが、Server Component が直接呼ぶ Query Service には
-  そのテスト先例が無く、本 Issue も既存パターンを踏襲してユニットテスト対象外とする。
-  代わりに実データに対する直接 SQL 検証（設計時）と Playwright E2E（実装後）で
-  カバーする
-- `app/stations/page.tsx` `app/lines/page.tsx` は Server Component のため
-  ユニットテスト対象外（`apps/CLAUDE.md`）。E2E でカバーする
+- `packages/platform-diagram/src/domain/*.test.ts`: 既存6ファイルをそのまま移設
+  （154テスト、挙動不変）
+- `packages/platform-diagram/src/domain/snap.test.ts`（PR3新規）: グリッド丸め／
+  号車境界スナップ／ドア中心スナップ／許容範囲外／Alt解除／負座標／範囲外の各ケース
+- `apps/admin/src/features/station-layout/ports.ts` 等の Query Service はユニットテスト
+  対象外（既存方針を踏襲。実データ直接SQL検証 + Playwright E2Eでカバー）
+- `DiagramEditLayer.tsx` はドラッグの pointer イベントを RTL でシミュレートする
+  （PR3で新規のテスト観点。既存 admin に前例が無いため、最初のドラッグ系 Client
+  Component テストになる）
 
-## 手動検証（実施記録）
+## 手動検証計画
 
-`PLAYWRIGHT_TEST=true pnpm dev`（admin :3001、Neon `development`）で、
-ブラウザ自動化が利用できない環境だったため以下で代替した。
+PR2 の時点で、対面乗り換えを持つ駅（赤坂見附・表参道）を確認する。ただし
+`docs/domain/station-master-model.md` 記載のとおり `facilityConnections` は
+実データ0件（#84で粒度見直し中）のため、乗換プレートが表示されないことをもって
+正常とする。
 
-1. **Neon MCP による直接 SQL 検証**: Query Service が組み立てる SQL を手で再現し、
-   件数・並び順・ブロック連続性・LIKE エスケープの効果を確認（上記「検証済みの
-   実データ挙動」）
-2. **Playwright E2E**（`e2e/stations-list.spec.ts`）: 実際に `next dev` を起動し
-   Chromium で実行。既存 `e2e/operators.spec.ts` と同じ Credentials プロバイダ
-   バイパス（`PLAYWRIGHT_TEST=true`）を使用
-3. **`next build`**: 本番ビルドが警告・エラー無しで通ることを確認
+## ドキュメント更新（PR5 / Phase 7）
 
-## ドキュメント更新（Phase 5）
-
-- `docs/domain/station-master-model.md`: `station_lines.station_order` が
-  97%（10,294/10,625）NULLであり、路線内の駅順は実質 `ekidata_station_cd` が
-  担っているという実測事実を追記する（恒久知識）
-- `docs/adr/README.md`: ADR-0009 を一覧表に追加済み
-- `apps/admin/eslint.config.mjs`: `legacyExclusions` から
-  `stations/page.tsx` `lines/page.tsx` を除去する
+- `docs/domain/platform-coordinate-system.md`: 冒頭の「E2E検証未完了」注記を除去
+  （#43はCLOSED済みで事実と乖離している）。「レイヤ構成」に編集レイヤを追記
+- `docs/domain/train-stop-patterns.md`: 同じく「E2E検証未完了」注記を除去
+- `docs/adr/0010-*.md`: 実装・検証通過後に `Proposed` → `Accepted` を判断（ユーザー承認後）
+- `apps/admin/eslint.config.mjs`: `legacyExclusions` から `facilities/page.tsx` ほか
+  旧ルート関連ファイルを除去
