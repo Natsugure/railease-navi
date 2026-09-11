@@ -2,8 +2,12 @@ import { z } from 'zod';
 
 const facilitySchema = z.object({
   typeCode: z.string().min(1),
-  isWheelchairAccessible: z.boolean().optional(),
-  isStrollerAccessible: z.boolean().optional(),
+  // nullable: PUTはコンコース全体をdelete→insertする全置換のため、駅レイアウト
+  // 統合ページ（Issue #95）が座標のドラッグだけで再送するときもnull（未設定）を
+  // そのまま送れる必要がある。omit/undefinedにするとrepository側でtrueに
+  // 埋められてしまい、未設定がアクセシブル扱いに黙って書き換わる
+  isWheelchairAccessible: z.boolean().nullable().optional(),
+  isStrollerAccessible: z.boolean().nullable().optional(),
   notes: z.string().nullable().optional(),
 });
 

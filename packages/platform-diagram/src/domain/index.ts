@@ -7,3 +7,4 @@ export * from './consist';
 export * from './doorOrder';
 export * from './concourse';
 export * from './concourseLayout';
+export * from './snap';

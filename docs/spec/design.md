@@ -224,9 +224,23 @@ export interface StationLayoutPageQuery {
 
 `LayoutPlatformDetailDTO` は `packages/platform-diagram` の `PlatformDTO`（`domain/types.ts`）
 と同じ形を土台に、`stopPatterns` を `LayoutStopPatternDTO`（`patternId` 付き）に置き換え、
-`selectedPatternId` を追加したもの。編集専用フィールド（`platformLocationCells.id` 等）は
-PR3 で追加する。`decimal` → `number` の変換は `external/query/stationLayoutPageQuery.ts`
-の中で行う（既存規約）。
+`selectedPatternId` を追加したもの。`decimal` → `number` の変換は
+`external/query/stationLayoutPageQuery.ts` の中で行う（既存規約）。
+
+**PR3実装時に追加した編集専用フィールド**: `PUT /api/stations/{sid}/platform-locations/{lid}`
+はコンコース全体を delete→insert する全置換のため、アクセス点を1つ動かすだけでも
+コンコース全体のペイロードが必要になる。往復に足りなかったフィールドを
+`ports.ts` の交差型（`LayoutFacilityDTO`/`LayoutCellDTO`/`LayoutConnectionDTO`/
+`LayoutConcourseDTO`）として追加した:
+
+- `platformLocations.notes`・`stationFacilities.notes`（欠けると全置換で消える）
+- `platformLocationCells.id`（draftのキー・React key。APIへは送らない）
+- `facilityConnections.connectedStationId`/`connectedPlatformId`/`directionId`
+  （欠けると connections を再送できず、省略時に乗換情報が delete のみされる）
+
+`packages/platform-diagram` の `types.ts` には足さない。`apps/web` の
+`stationDetailQuery` にも供給義務が生じ、パッケージが編集用フィールドを
+抱え込むことになる（ADR-0010「レビュー」節）。
 
 現在 `facilities/page.tsx`（312行）が `db` を直接 import してクエリを直書きしている
 のを、この1本に集約する。**実カウントの訂正**: 「7本」は概算で、実際は8箇所
@@ -253,21 +267,47 @@ export function snapMeters(
 ): number;
 
 export function roundToDecimal2(x: number): number;
+
+// 実装時に追加（tasks.md 参照）。号車境界をドラッグするとき、その境界自身の
+// 座標を候補から除かないと必ず元の位置に吸い付いて動かせなくなるため
+export function snapCandidates(
+  cars: Pick<StopPatternCarDTO, 'startMeters' | 'endMeters' | 'doorCount'>[],
+  physicalLength: number,
+  options?: { exclude?: number[] },
+): number[];
 ```
 
 - スナップ候補: `doorCentersX()`（既存）の全ドア中心、各号車の `startMeters`/`endMeters`、
   `0`、`physicalLength`
 - 許容範囲 0.4m（= 2px @ 5px/m）以内なら候補に吸着。外れていれば 0.5m グリッドへ丸める
-- Alt 押下中はスナップを解除し `roundToDecimal2` のみ適用
+- Alt（または Meta）押下中はスナップを解除し `roundToDecimal2` のみ適用
 - すべて純関数。Vitest でグリッド／号車境界／ドア中心／許容範囲外／負座標／範囲外の
   各ケースをテストする
 
-**bounds の凍結**: `computeBounds()` は全座標から算出するため、要素を右へドラッグすると
-bounds が広がって図全体がスケールし直し、ドラッグが暴れる。ドラッグ開始時の bounds を
-`DiagramEditLayer` の state に固定し、ドロップ後に再計算する。
+**bounds の凍結（実装時に訂正）**: `computeBounds()` は全座標から算出するため、要素を
+右へドラッグすると bounds が広がって図全体がスケールし直し、ドラッグが暴れる。
+当初「ドラッグ開始時の bounds を固定し、ドロップ後に再計算する」という設計だったが、
+素直に実装すると壊れる: bounds が変わると `viewBox` とキャンバスの `min-width` が
+同時に変わるため、pointerup の瞬間に図全体がスケールし直し横スクロール位置まで飛ぶ。
+「ドラッグ中は暴れない」が「離した瞬間に暴れる」に置き換わるだけになる。
+
+代わりに **保存（`router.refresh()` を伴う保存成功）を境に凍結する**。
+`StationLayoutEditor` は「保存が確定した値（baseline）」と「未保存のドラッグ中の値
+（draft）」を分けて state に持ち、`computeBounds()` は baseline からのみ算出する。
+baseline は編集セッションの開始時（マウント）と、保存成功のたびに（そのアグリゲート分だけ）
+更新される。draft がいくら動いても baseline は変わらないため、bounds は自動的に
+「保存後にだけ再計算される」。
+
+**縦方向（y）は割合で取れない（実装時に判明）**: `preserveAspectRatio="xMidYMid meet"` は
+要素ボックスが viewBox より高いとき幅律速のスケールになり、x は正しいまま y だけ
+`(要素の高さ − viewHeight × scale) / 2` ずれる。x はキャンバス実測幅から
+`xFraction() * 100%` で取れるが、**y は `getBoundingClientRect()` の実測値から
+都度計算する**（`docs/domain/platform-coordinate-system.md`「編集レイヤ」参照）。
 
 **範囲外・負座標**: `platform-coordinate-system.md`「バリデーションで範囲を制限しない」を
-守る。`[0, physicalLength]` の外へドラッグできるようにし、警告もブロックもしない。
+守る。`[0, physicalLength]` の外へドラッグできるようにし、警告もブロックもしない
+（ただし凍結 bounds の外までは出られない。`computeBounds()` は常に `MARGIN_METERS`
+ぶんの余白を持つため、これは実用上の制約にならない）。
 
 ## 保存（PR3〜PR4）
 
@@ -284,9 +324,32 @@ bounds が広がって図全体がスケールし直し、ドラッグが暴れ�
 - ドラッグ結果はクライアント state に溜め、対象アグリゲートに「●未保存」バッジを出す
 - 保存は該当アグリゲートのみ。「すべて保存」ボタンは作らない（複数アグリゲートの
   逐次保存は原子的でなく、1ボタンで見せると誤った保証になる）
-- ホームタブ切替・パターン切替・ページ離脱時に未保存があれば Mantine の `Modal` で確認
-- 保存後は `platformLocationCells.id` が変わる（全置換書き込み）ため、選択状態は
-  `(concourseId, xPositionMeters)` で復元する。復元できなければ選択を解除する
+- ホームタブ切替・パターン切替・ページ離脱時に未保存があれば Mantine の `Modal` で確認。
+  **実装時の制約**: App Router に公式のルート遷移ブロックが無いため、このモーダルで
+  止められるのは `StationLayoutEditor` 自身が持つタブと `beforeunload`（リロード・
+  タブ閉じ）のみ。`AdminShell` のグローバルナビ等、他経路からの離脱は止められない
+- 保存後は `platformLocationCells.id` が変わる（全置換書き込み）が、**実装時に単純化**:
+  `StationLayoutEditor` は保存に成功したアグリゲートについて、サーバーへ実際に送った
+  値をそのまま baseline へ取り込む（`router.refresh()` の到着を待たない）。
+  id はサーバー側で再生成されるが、その id は API 送信にも UI のキーにも使うだけで
+  保存結果の正しさには影響しないため、同一編集セッション内では元の（stale な）id を
+  保持したまま使い続けてよい。したがって「`(concourseId, xPositionMeters)` による
+  選択復元」は不要になった（選択は同一セッション内で id が変わらないため、そのまま
+  維持される。id が変わるのはページの再マウント時のみで、そのときは選択状態も
+  最初から無い）
+
+**号車の重なり・隙間を作らない（PR3実装時に確定した恒久ルール）**: 号車境界を
+ドラッグしたとき、隣接号車の `endMeters`/`startMeters` を常に同値に保つ
+（`apps/admin/src/features/station-layout/domain/editDraft.ts` の `moveCarBoundary`）。
+重なり・隙間は物理的に起こり得ないため、編集側で構造的に作れないようにする
+（`docs/domain/train-stop-patterns.md`「隣接号車は境界を共有する」）。
+サーバー側スキーマでの強制は、既存データの連続性を確認してから別途追加する
+（未確認。tasks.md 参照）。
+
+**US-3 の実装範囲（PR3 / PR4 の分割、実装時に明確化）**: US-3 の受け入れ基準のうち
+「列車選択＋編成基準位置入力で `buildCarSegments()` のプレビューを重ねる」はインスペクタ
+（テキストフォーム統合）の一部であり PR4 の対象。PR3 が実装するのは「号車境界を
+個別にドラッグして上書きできる」「保存すると確定値のみが保存される」の2点のみ。
 
 **複製フロー（#31、PR4）**: 既存 `POST .../duplicate` は使わない。クライアント側で
 コンコースをコピーし「未保存の新規コンコース」として図に出し、x をずらしてから
@@ -312,13 +375,24 @@ PR5（旧ルート削除）で一緒に削除する。
 
 - `packages/platform-diagram/src/domain/*.test.ts`: 既存6ファイルをそのまま移設
   （154テスト、挙動不変）
-- `packages/platform-diagram/src/domain/snap.test.ts`（PR3新規）: グリッド丸め／
-  号車境界スナップ／ドア中心スナップ／許容範囲外／Alt解除／負座標／範囲外の各ケース
+- `packages/platform-diagram/src/domain/snap.test.ts`（PR3新規、26テスト）: グリッド丸め／
+  号車境界スナップ／ドア中心スナップ／許容範囲外／Alt解除／負座標／範囲外／
+  `snapCandidates` の各ケース
+- `apps/admin/src/features/station-layout/domain/editDraft.test.ts`（PR3実装時に追加、
+  22テスト）: draft 操作（`moveCell`/`moveCarBoundary`/`moveCarEdge`）と、
+  全置換PUTへのペイロード組み立て（`toPlatformLocationPayload`/`toStopPatternPayload`）。
+  往復に必要な全フィールド（notes・facility.notes・connections）が保持されることを
+  ここで固定する。`'use client'` に依存しない純関数なので node 環境でテストできる
 - `apps/admin/src/features/station-layout/ports.ts` 等の Query Service はユニットテスト
   対象外（既存方針を踏襲。実データ直接SQL検証 + Playwright E2Eでカバー）
-- `DiagramEditLayer.tsx` はドラッグの pointer イベントを RTL でシミュレートする
-  （PR3で新規のテスト観点。既存 admin に前例が無いため、最初のドラッグ系 Client
-  Component テストになる）
+- `DiagramEditLayer.test.tsx`（PR3実装時に追加、12テスト）: ドラッグの pointer イベントを
+  RTL でシミュレートする（既存 admin に前例が無いため、最初のドラッグ系 Client
+  Component テストになった）。jsdom の `Element.prototype.getBoundingClientRect` を
+  スタブしてキャンバス実測を再現する
+- `StationLayoutEditor.test.tsx`（PR3実装時に追加、11テスト）: ドラッグ→未保存バッジ→
+  保存の一連の流れ。保存 fetch のURL・method・ボディ全体の検証、bounds凍結の回帰
+  （`<svg>` の `viewBox` がドラッグ中に変化しないこと）、404エラー通知、未保存タブ
+  遷移の確認モーダル、`beforeunload` を含む
 
 ## 手動検証計画
 
