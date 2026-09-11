@@ -18,22 +18,14 @@ import {
   stationLines,
 } from '@furatora/database/schema';
 import { asc, eq, inArray } from 'drizzle-orm';
-import type { StationLayoutPageQuery, LayoutPlatformDTO, LayoutStopPatternDTO } from '@/features/station-layout/ports';
+import type { StationLayoutPageQuery, LayoutStopPatternDTO } from '@/features/station-layout/ports';
 import type { ConcourseDTO, StopPatternCarDTO } from '@furatora/platform-diagram/domain';
 
-// 駅レイアウト統合ページ（Issue #95 PR2）。旧 facilities/page.tsx（312行）が db を
-// 直接 import して8箇所のクエリ（うち路線解決はホームの路線数ぶん往復するN+1）を
-// 直書きしていたのを、この1本に集約する。
-//
-// apps/web/src/external/query/stationDetailQuery.ts の組み立てロジックを写経している。
-// 差分は3点: (1) publishedStation() を通さない（admin は未公開駅も編集対象）、
-// (2) 入口が slug ではなく stationId、(3) 選択中のホーム1件だけを詳細取得する
-// （web は駅の全ホーム分を一度に返す）。
-// decimal → number の変換はすべてここで完結させる（DTOより上に string を渡さない。
-// docs/domain/platform-coordinate-system.md「単位と精度」）。
+// apps/web/src/external/query/stationDetailQuery.ts がベース。
+// admin は未公開駅も編集対象のため publishedStation() を通さない。
+// decimal → number の変換はここで完結させる（docs/domain/platform-coordinate-system.md「単位と精度」）
 
-// connectedStationId ごとの乗換路線名・色（facilityConnections のラベル付けに使う）。
-// admin は未公開駅も含めて解決する（apps/web と異なり publishedStation() を通さない）
+/** connectedStationId ごとの乗換路線名・色 */
 async function getLinesByConnectedStation(connectedStationIds: string[]) {
   const map = new Map<string, { names: string[]; colors: (string | null)[] }>();
   if (connectedStationIds.length === 0) return map;
@@ -62,8 +54,7 @@ async function getLinesByConnectedStation(connectedStationIds: string[]) {
   return map;
 }
 
-// ホームのコンコース（platformLocations → platformLocationCells → stationFacilities /
-// facilityConnections）を1ホーム分だけ取得する
+/** 1ホーム分のコンコース（アクセス点・設備・乗換込み） */
 async function getConcourses(platformId: string): Promise<ConcourseDTO[]> {
   const locationList = await db
     .select()
@@ -101,7 +92,7 @@ async function getConcourses(platformId: string): Promise<ConcourseDTO[]> {
     cellIds.length > 0
       ? db.select().from(stationFacilities).where(inArray(stationFacilities.platformLocationCellId, cellIds))
       : Promise.resolve([]),
-    db.select().from(facilityTypes),
+    db.select({ code: facilityTypes.code, name: facilityTypes.name }).from(facilityTypes),
     getLinesByConnectedStation([...new Set(connectionRows.map((c) => c.connectedStationId))]),
   ]);
 
@@ -110,8 +101,8 @@ async function getConcourses(platformId: string): Promise<ConcourseDTO[]> {
   const cellsByLocation = new Map(locationIds.map((id) => [id, cellList.filter((c) => c.platformLocationId === id)]));
   const connectionsByLocation = new Map<string, typeof connectionRows>();
   for (const row of connectionRows) {
-    const existing = connectionsByLocation.get(row.platformLocationId) ?? [];
-    connectionsByLocation.set(row.platformLocationId, [...existing, row]);
+    if (!connectionsByLocation.has(row.platformLocationId)) connectionsByLocation.set(row.platformLocationId, []);
+    connectionsByLocation.get(row.platformLocationId)!.push(row);
   }
 
   return locationList.map((loc) => ({
@@ -139,9 +130,7 @@ async function getConcourses(platformId: string): Promise<ConcourseDTO[]> {
   }));
 }
 
-// ホームの停車位置パターン一覧（列車・号車・ドア設備込み）を取得する。
-// 並び順は trains.carCount 昇順 → trains.name 昇順 → trainStopPatterns.id 昇順
-// （trainStopPatterns に表示順カラムが無いため。決定性を保つため id まで含める）
+/** 1ホーム分の停車位置パターン（列車・号車・ドア設備込み） */
 async function getStopPatterns(platformId: string): Promise<LayoutStopPatternDTO[]> {
   const patternRows = await db
     .select({ id: trainStopPatterns.id, trainId: trainStopPatterns.trainId })
@@ -221,78 +210,53 @@ async function getStopPatterns(platformId: string): Promise<LayoutStopPatternDTO
     });
   }
 
+  // trainStopPatterns に表示順カラムが無いため、決定性を保つよう id まで含めて並べる
   return dtos.sort((a, b) => a.carCount - b.carCount || a.trainLabel.localeCompare(b.trainLabel) || a.patternId.localeCompare(b.patternId));
 }
 
 export const dbStationLayoutPageQuery: StationLayoutPageQuery = {
   async getContext(stationId, selection) {
-    const [stationRow] = await db.select({ name: stations.name }).from(stations).where(eq(stations.id, stationId));
+    const [[stationRow], platformList] = await Promise.all([
+      db.select({ name: stations.name }).from(stations).where(eq(stations.id, stationId)),
+      db
+        .select({
+          id: platforms.id,
+          platformNumber: platforms.platformNumber,
+          lineId: platforms.lineId,
+          inboundDirectionId: platforms.inboundDirectionId,
+          outboundDirectionId: platforms.outboundDirectionId,
+          physicalLength: platforms.physicalLength,
+          platformSide: platforms.platformSide,
+          notes: platforms.notes,
+        })
+        .from(platforms)
+        .where(eq(platforms.stationId, stationId))
+        .orderBy(asc(platforms.platformNumber)),
+    ]);
     if (!stationRow) return null;
 
-    const platformList = await db
-      .select({
-        id: platforms.id,
-        platformNumber: platforms.platformNumber,
-        lineId: platforms.lineId,
-        inboundDirectionId: platforms.inboundDirectionId,
-        outboundDirectionId: platforms.outboundDirectionId,
-        physicalLength: platforms.physicalLength,
-        platformSide: platforms.platformSide,
-        notes: platforms.notes,
-      })
-      .from(platforms)
-      .where(eq(platforms.stationId, stationId))
-      .orderBy(asc(platforms.platformNumber));
+    // UUID形式の検証はページ側の parseUuidParam が担い、ここでは駅への所属のみ検証する
+    const selected = platformList.find((p) => p.id === selection.platformId) ?? platformList[0];
+    if (!selected) return { stationName: stationRow.name, platforms: [], platform: null };
 
-    if (platformList.length === 0) {
-      return { stationName: stationRow.name, platforms: [], platform: null };
-    }
-
-    const lineIds = [...new Set(platformList.map((p) => p.lineId))];
-    const directionIds = [
-      ...new Set(platformList.flatMap((p) => [p.inboundDirectionId, p.outboundDirectionId]).filter((id): id is string => id !== null)),
-    ];
-
-    // 路線数ぶんクエリを往復しない（旧 facilities/page.tsx の N+1 を踏まない）
-    const [lineList, directionList] = await Promise.all([
-      db.select().from(lines).where(inArray(lines.id, lineIds)),
-      directionIds.length > 0 ? db.select().from(lineDirections).where(inArray(lineDirections.id, directionIds)) : Promise.resolve([]),
+    const directionIds = [selected.inboundDirectionId, selected.outboundDirectionId].filter((id): id is string => id !== null);
+    const [stopPatterns, concourses, [line], directionList] = await Promise.all([
+      getStopPatterns(selected.id),
+      getConcourses(selected.id),
+      db.select({ name: lines.name, color: lines.color }).from(lines).where(eq(lines.id, selected.lineId)),
+      directionIds.length > 0
+        ? db
+          .select({ id: lineDirections.id, displayName: lineDirections.displayName })
+          .from(lineDirections)
+          .where(inArray(lineDirections.id, directionIds))
+        : Promise.resolve([]),
     ]);
-    const lineMap = new Map(lineList.map((l) => [l.id, l]));
-    const directionMap = new Map(directionList.map((d) => [d.id, d]));
-
-    const platformTabs: LayoutPlatformDTO[] = platformList.map((p) => {
-      const line = lineMap.get(p.lineId);
-      const inboundName = p.inboundDirectionId ? directionMap.get(p.inboundDirectionId)?.displayName : undefined;
-      const outboundName = p.outboundDirectionId ? directionMap.get(p.outboundDirectionId)?.displayName : undefined;
-      return {
-        id: p.id,
-        platformNumber: p.platformNumber,
-        lineName: line?.name ?? '',
-        lineColor: line?.color ?? null,
-        directionLabel: [inboundName, outboundName].filter(Boolean).join(' / '),
-      };
-    });
-
-    // 選択中ホームを決定: platformId が当該駅のホームに属せば採用、さもなくば先頭
-    // （UUID形式のバリデーション自体はページ側の parseUuidParam が担う。ここでは
-    // 所属検証のみ行う。design.md「エラーハンドリング」: 500にせず先頭にフォールバック）。
-    // platformList.length === 0 は上で早期returnしているため、先頭要素は必ず存在する
-    const selected = platformList.find((p) => p.id === selection.platformId) ?? platformList[0]!;
-
-    const [stopPatterns, concourses] = await Promise.all([getStopPatterns(selected.id), getConcourses(selected.id)]);
-
-    // 選択中パターンを決定: patternId が当該ホームのパターンに属せば採用、さもなくば先頭
+    const directionName = (id: string | null) => directionList.find((d) => d.id === id)?.displayName ?? null;
     const selectedPattern = stopPatterns.find((p) => p.patternId === selection.patternId) ?? stopPatterns[0];
-
-    const line = lineMap.get(selected.lineId);
-    const inboundDirection = selected.inboundDirectionId ? directionMap.get(selected.inboundDirectionId) : undefined;
-    const outboundDirection = selected.outboundDirectionId ? directionMap.get(selected.outboundDirectionId) : undefined;
-    const platformSide = selected.platformSide === 'top' || selected.platformSide === 'bottom' ? selected.platformSide : null;
 
     return {
       stationName: stationRow.name,
-      platforms: platformTabs,
+      platforms: platformList.map((p) => ({ id: p.id, platformNumber: p.platformNumber })),
       platform: {
         id: selected.id,
         platformNumber: selected.platformNumber,
@@ -300,10 +264,10 @@ export const dbStationLayoutPageQuery: StationLayoutPageQuery = {
         lineName: line?.name ?? '',
         lineColor: line?.color ?? null,
         inboundDirectionId: selected.inboundDirectionId,
-        inboundDirectionName: inboundDirection?.displayName ?? null,
+        inboundDirectionName: directionName(selected.inboundDirectionId),
         outboundDirectionId: selected.outboundDirectionId,
-        outboundDirectionName: outboundDirection?.displayName ?? null,
-        platformSide,
+        outboundDirectionName: directionName(selected.outboundDirectionId),
+        platformSide: selected.platformSide,
         notes: selected.notes,
         physicalLength: Number(selected.physicalLength),
         stopPatterns,

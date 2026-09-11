@@ -5,7 +5,7 @@ import {
   connectionLabels,
   exitsLabel,
   hasDisplayableInfo,
-  type ConcourseDTO,
+  isDrawable,
   type PlatformDTO,
 } from '@furatora/platform-diagram/domain';
 import { PlatformDiagram } from '@furatora/platform-diagram/components';
@@ -13,11 +13,6 @@ import { PlatformDiagram } from '@furatora/platform-diagram/components';
 type Props = {
   platform: PlatformDTO;
 };
-
-/** 図に描けるコンコースか。座標を持つアクセス点が1つでもあれば束ね線を引ける */
-function isDrawable(concourse: ConcourseDTO): boolean {
-  return concourse.cells.some((cell) => cell.xPositionMeters !== null);
-}
 
 export function PlatformDisplay({ platform }: Props) {
   const directions = [platform.inboundDirectionName, platform.outboundDirectionName]

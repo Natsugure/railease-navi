@@ -9,9 +9,7 @@ import { AdminShell } from '@/components/AdminShell';
 import { auth } from '@/auth';
 import './globals.css';
 
-// ホーム図（駅レイアウト統合ページ、Issue #95）のサイン用書体。
-// apps/web/src/app/layout.tsx と同じパターン（@furatora/platform-diagram/styles.css
-// の --font-sign が --font-biz-udpgothic を参照する）
+// ホーム図のサイン用書体。@furatora/platform-diagram/styles.css の --font-sign が参照する
 const bizUdpGothic = BIZ_UDPGothic({
   subsets: ['latin'],
   weight: ['400', '700'],

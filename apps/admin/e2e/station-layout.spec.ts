@@ -1,14 +1,9 @@
 import { test, expect } from '@playwright/test';
 
-// 駅レイアウト統合ページ（Issue #95 PR2、読み取り専用）。
-// operators.spec.ts / stations-list.spec.ts と同じく実DB（Neon development）に依存する。
-// 「東京メトロ」はシード済みマスタデータとして常に存在する事業者
-// （docs/domain/station-master-model.md、stations-list.spec.ts の「JR東日本」と同様の前提）。
+// 実DB（Neon development）に依存する。「東京メトロ」はシード済みの事業者
 
-// 駅一覧の検索結果から「管理」リンク（/stations/{id}/facilities）の href を辿って
-// stationId を得る。このページはまだ一覧からリンクされていない（PR2の範囲外。
-// リンク付け替えは旧ルート削除と一体のPR5で行う）ため、既存の /facilities リンクの
-// id 部分を流用する
+/** 駅一覧の「管理」リンク（/stations/{id}/facilities）から stationId を得る */
+// 一覧から /layout へのリンク付け替えはPR5で行う。それまでは /facilities の id を流用する
 async function findStationId(page: import('@playwright/test').Page, query: string): Promise<string> {
   await page.goto('/stations');
   await page.getByRole('link', { name: /東京メトロ/ }).click();
@@ -45,9 +40,7 @@ test('不正なUUIDの platformId を渡しても500にならず先頭ホーム�
 });
 
 test('存在しない駅IDは404になる', async ({ page }) => {
-  // next dev（Turbopack）は notFound() 後もHTTPステータスとして200を返す
-  // （既存の /facilities でも同じ挙動。本番ビルドでは404になる）ため、
-  // ここではNext標準の404ページ内容で判定する
+  // next dev は notFound() 後もステータス200を返すため、404ページの内容で判定する
   await page.goto('/stations/00000000-0000-0000-0000-000000000000/layout');
   await expect(page.getByText('This page could not be found.')).toBeVisible();
 });

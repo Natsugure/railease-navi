@@ -8,7 +8,7 @@ import {
   connectionLabels,
   exitsLabel,
   hasDisplayableInfo,
-  type ConcourseDTO,
+  isDrawable,
 } from '@furatora/platform-diagram/domain';
 import { PlatformDiagram } from '@furatora/platform-diagram/components';
 import { LinkAnchor, LinkButton } from '@/components/LinkElements';
@@ -19,23 +19,14 @@ type Props = {
   context: StationLayoutContext;
 };
 
-// 図に描けるコンコースか。座標を持つアクセス点が1つでもあれば束ね線を引ける
-// （apps/web/src/features/platform/components/PlatformDisplay.tsx と同じ判定）
-function isDrawable(concourse: ConcourseDTO): boolean {
-  return concourse.cells.some((cell) => cell.xPositionMeters !== null);
-}
-
 function layoutHref(stationId: string, platformId: string, patternId?: string) {
   const params = new URLSearchParams({ platformId });
   if (patternId) params.set('patternId', patternId);
   return `/stations/${stationId}/layout?${params.toString()}`;
 }
 
-// 駅レイアウト統合ページの本体（読み取り専用、Issue #95 PR2）。Server Component のまま
-// （PlatformDiagram はイベントハンドラを持たないため RSC で描画できる）。
-// ホームタブ・パターンタブは router.push ではなく Link で組む。PR2 はページ全体が
-// Server Component のままで完結するため、未保存確認が要らずクライアントJSゼロで済む
-// （router.push 化は PR3 の編集ビューで未保存stateの確認が必要になった時点で行う）。
+/** 駅レイアウト統合ページの本体（読み取り専用）。Server Component */
+// タブは Link で組む。router.push 化は未保存確認が必要になるPR3の編集ビューで行う
 export function StationLayoutView({ stationId, context }: Props) {
   const { platform } = context;
 
@@ -47,11 +38,10 @@ export function StationLayoutView({ stationId, context }: Props) {
 
       <Title order={2} mb="lg">{context.stationName}</Title>
 
-      {context.platforms.length === 0 || !platform ? (
+      {!platform ? (
         <Text c="dimmed">ホームがまだ登録されていません。</Text>
       ) : (
         <Stack gap="lg">
-          {/* ホームタブ */}
           <Group gap="xs">
             {context.platforms.map((p) => (
               <LinkButton
@@ -79,7 +69,6 @@ export function StationLayoutView({ stationId, context }: Props) {
               </Text>
             </Group>
 
-            {/* 停車位置パターンタブ */}
             {platform.stopPatterns.length > 1 && (
               <Group gap="xs" mb="md">
                 {platform.stopPatterns.map((sp) => (
@@ -117,19 +106,16 @@ function StationLayoutDiagram({ platform }: { platform: NonNullable<StationLayou
     return <Text size="sm" c="dimmed" fs="italic">列車情報がありません</Text>;
   }
 
-  // bounds は「全パターン」から算出する。選択中の1本だけから算出すると、パターンを
-  // 切り替えるたびに図がスケールし直してしまう（PR3の bounds凍結と地続きの理由）
+  // bounds は全パターンから算出する。選択中の1本だけだとパターン切替のたびに図がスケールし直す
   const bounds = computeBounds(platform.physicalLength, platform.stopPatterns, platform.concourses);
   const plateLayout = layoutConcoursePlates(platform.concourses, bounds);
   const facingLayout = layoutFacingBanners(platform.concourses, bounds);
 
-  // 図に描けない（座標を持つアクセス点が無い）コンコースだけをテキストで補う
   const undrawable = platform.concourses.filter((c) => !isDrawable(c) && hasDisplayableInfo(c));
 
   return (
     <Stack gap="md">
-      {/* min-w-0 は必須。無いと図のキャンバス（min-width指定）まで幅が膨らみ、
-          overflow-x-auto が効かず切り落とされる（PlatformDisplay.tsx と同じ注意点） */}
+      {/* min-w-0 は必須。無いと図のキャンバス幅まで膨らみ overflow-x-auto が効かない */}
       <div className="min-w-0">
         <PlatformDiagram
           pattern={selectedPattern}
