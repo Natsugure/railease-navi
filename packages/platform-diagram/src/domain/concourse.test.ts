@@ -6,6 +6,7 @@ import {
   exitsLabel,
   facingTransferText,
   hasDisplayableInfo,
+  isDrawable,
   primaryLineColor,
   transferEntries,
 } from './concourse';
@@ -65,6 +66,21 @@ describe('hasDisplayableInfo', () => {
 
   it('空白のみの出口名は表示のきっかけにしない', () => {
     expect(hasDisplayableInfo(concourse({ exits: '   ' }))).toBe(false);
+  });
+});
+
+describe('isDrawable', () => {
+  it('座標を持つアクセス点が1つでもあれば描ける', () => {
+    const cells = [
+      { xPositionMeters: null, facilities: [] },
+      { xPositionMeters: 10, facilities: [] },
+    ];
+    expect(isDrawable(concourse({ cells }))).toBe(true);
+  });
+
+  it('アクセス点がすべて座標未登録、または0件なら描けない', () => {
+    expect(isDrawable(concourse({ cells: [{ xPositionMeters: null, facilities: [] }] }))).toBe(false);
+    expect(isDrawable(concourse())).toBe(false);
   });
 });
 

@@ -32,6 +32,7 @@
   "dependencies": {
     "@auth/core": "^0.41.0",
     "@furatora/database": "workspace:*",
+    "@furatora/platform-diagram": "workspace:*",
     "@mantine/core": "^8.3.14",
     "@mantine/hooks": "^8.3.14",
     "@mantine/notifications": "^8.3.15",

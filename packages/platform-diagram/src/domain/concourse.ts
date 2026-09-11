@@ -8,6 +8,11 @@ export function hasDisplayableInfo(concourse: Pick<ConcourseDTO, 'cells' | 'exit
   return concourse.cells.length > 0 || exitsLabel(concourse) !== null || concourse.connections.length > 0;
 }
 
+/** 図に描けるコンコースか。座標を持つアクセス点が1つでもあれば束ね線を引ける */
+export function isDrawable(concourse: Pick<ConcourseDTO, 'cells'>): boolean {
+  return concourse.cells.some((cell) => cell.xPositionMeters !== null);
+}
+
 /**
  * 方面名に「方面」を添える。
  *
