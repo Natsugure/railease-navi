@@ -10,6 +10,9 @@
 
 - PR1（仕様整備 + ADR-0010 + `packages/platform-diagram` 新設）: 完了
 - PR2（読み取り専用の統合ページ）: 完了
+- PR3（図上編集）: 実装・自動テスト完了。**引き継ぎ事項が2件残る**（下記 Phase 9 参照）:
+  サーバー側 refine 追加前のデータ確認SQL、実データでのSQL確認・E2E追加
+  （ドラッグ可能な要素を持つ駅が実DBに無い可能性が高いため前処理が必要）
 
 ## フェーズ構成
 
@@ -230,26 +233,93 @@ PR5: 旧ルート削除・引き渡し
 
 ## PR3: 図上編集
 
-- [ ] **TASK-6.1** `packages/platform-diagram/src/domain/snap.ts` を新規作成:
-      `pxToMeters` / `snapMeters` / `roundToDecimal2`
-- [ ] **TASK-6.2** `snap.test.ts` を新規作成: グリッド丸め／号車境界スナップ／
+- [x] **設計訂正**: `PUT platform-locations` は全置換のため、往復に必要なフィールド
+      （`platformLocations.notes`/`stationFacilities.notes`/`platformLocationCells.id`/
+      `facilityConnections.connectedStationId,connectedPlatformId,directionId`）が
+      既存DTOに欠けていると判明。`ports.ts` に交差型（`LayoutFacilityDTO` 等）を追加し、
+      `stationLayoutPageQuery.ts` で供給する形で解決（design.md「データフロー」参照）
+- [x] **バグ修正（実装時に発見）**: `facilitySchema` が `isWheelchairAccessible`/
+      `isStrollerAccessible` に `null` を許さず、`platformLocationRepository` が
+      `?? true` で埋めていたため、全置換PUTで座標だけ動かす保存でも未設定(null)が
+      アクセシブル(true)に黙って書き換わる不具合があった。スキーマを `.nullable()` に
+      広げ、repositoryの判定を「省略(undefined)時のみtrueを補う」に変更して修正
+- [x] **設計訂正**: bounds凍結は「ドラッグ開始時に固定しドロップ後に再計算」ではなく
+      「保存成功時（baseline更新時）にのみ再計算」に変更（design.md「編集レイヤの
+      座標変換」参照。素直に実装するとドロップ直後に図が暴れるため）
+- [x] **設計訂正**: 縦方向(y)は割合で取れないと判明。x は `xFraction()*100%`、
+      y は `getBoundingClientRect()` の実測値から算出する非対称構成にした
+      （design.md・`docs/domain/platform-coordinate-system.md`「編集レイヤ」参照）
+- [x] **決定事項（開発者確認済み）**: 号車境界は隣接号車を連動させ
+      `cars[i].endMeters === cars[i+1].startMeters` を常に保つ（重なり・隙間を
+      物理的に作れないようにする、この計画で確定した恒久ドメインルール。
+      `docs/domain/train-stop-patterns.md`「隣接号車は境界を共有する」参照）
+- [x] **TASK-6.1** `packages/platform-diagram/src/domain/snap.ts` を新規作成:
+      `pxToMeters` / `snapMeters` / `roundToDecimal2` / `snapCandidates`
+      （実装時に追加。自己吸着防止の`exclude`引数を持つ）
+- [x] **TASK-6.2** `snap.test.ts` を新規作成（26テスト）: グリッド丸め／号車境界スナップ／
       ドア中心スナップ／許容範囲外／Alt解除相当（スナップ無効時）／負座標／範囲外
-- [ ] **TASK-7.1** `apps/admin/src/features/station-layout/components/StationLayoutEditor.tsx`
-      を新規作成（`'use client'`。未保存stateの保持、ホーム/パターン切替時の確認モーダル）
-- [ ] **TASK-7.2** `apps/admin/src/features/station-layout/components/DiagramEditLayer.tsx`
+- [x] **TASK-7.0**（計画時に追加）`apps/admin/src/features/station-layout/ports.ts` /
+      `stationLayoutPageQuery.ts` を編集専用フィールドで拡張
+- [x] **TASK-7.0b**（計画時に追加）`packages/platform-diagram/src/components/PlatformDiagram.tsx`
+      に `diagramOverlay?: (rows: VerticalLayout) => ReactNode` を追加。SVGを`relative`で
+      ラップしその中に絶対配置で重ねる。web は未指定のため挙動不変
+- [x] **TASK-7.0c**（計画時に追加）`apps/admin/src/features/station-layout/domain/editDraft.ts`
+      を新規作成: draft操作（`moveCell`/`moveCarBoundary`/`moveCarEdge`）と
+      全置換PUTへのペイロード組み立て（`toPlatformLocationPayload`/`toStopPatternPayload`）
+      を純関数化。22テスト
+- [x] **TASK-7.1** `apps/admin/src/features/station-layout/components/StationLayoutEditor.tsx`
+      を新規作成（`'use client'`。未保存stateの保持、ホーム/パターン切替時の確認モーダル、
+      `beforeunload`）
+- [x] **TASK-7.2** `apps/admin/src/features/station-layout/components/DiagramEditLayer.tsx`
       を新規作成（`xFraction()` で位置合わせしたポインタイベントハンドル。
-      bounds凍結、Alt検出、スナップ候補の算出）
-- [ ] **TASK-8.1** アクセス点ドラッグの保存を実装
+      bounds凍結、Alt/Meta検出、スナップ候補の算出）
+- [x] **TASK-8.1** アクセス点ドラッグの保存を実装
       （`PUT /api/stations/{sid}/platform-locations/{lid}` を呼ぶ）
-- [ ] **TASK-8.2** 号車境界ドラッグの保存を実装
+- [x] **TASK-8.2** 号車境界ドラッグの保存を実装
       （`PUT /api/stations/{sid}/train-stop-patterns/{pid}` を呼ぶ）
-- [ ] **TASK-8.3** 未保存バッジ・保存後の選択状態復元（`(concourseId, xPositionMeters)`）を実装
+- [x] **TASK-8.3** 未保存バッジ・編集パネルを実装。**設計訂正**: 保存成功時にサーバーへ
+      送った値をそのままbaselineへ取り込む方式にしたため（design.md参照）、
+      `(concourseId, xPositionMeters)` による選択復元は不要になった（同一編集セッション内
+      ではidが変わらないため選択はそのまま維持される）
+- [ ] **未着手（開発者への引き継ぎ事項）**: `trainStopPatternSchema` へのサーバー側 refine
+      （隣接号車の境界一致を強制）。既存DBに不連続な編成が無いか、以下のSQLで確認してから
+      追加すること（MCPが`org_id`を要求し本セッションから実行できなかった）:
+      ```sql
+      SELECT p.id AS pattern_id, s.name AS station, pl.platform_number, t.name AS train,
+             a.car_number AS car_a, a.end_meters, b.car_number AS car_b, b.start_meters,
+             (b.start_meters - a.end_meters) AS gap
+      FROM train_stop_pattern_cars a
+      JOIN train_stop_pattern_cars b
+        ON b.train_stop_pattern_id = a.train_stop_pattern_id AND b.car_number = a.car_number + 1
+      JOIN train_stop_patterns p ON p.id = a.train_stop_pattern_id
+      JOIN platforms pl ON pl.id = p.platform_id
+      JOIN stations s ON s.id = pl.station_id
+      JOIN trains t ON t.id = p.train_id
+      WHERE ABS(b.start_meters - a.end_meters) > 0.01
+      ORDER BY s.name, pl.platform_number, a.car_number;
+      ```
+      0件なら refine をそのまま追加してよい。不連続なペアがあれば、意図的な隙間か
+      入力ミスかを確認してから判断する
 
 ### Phase 9: PR3 検証
 
-- [ ] `pnpm run typecheck` / `lint` / `vitest run` / `next build`（admin / packages/platform-diagram）
-- [ ] RTL で pointer イベントによるドラッグをシミュレートするテストを追加
-- [ ] 保存後に DB の値が期待どおりか SQL で確認
+- [x] `pnpm run typecheck` / `lint` / `test`（admin / packages/platform-diagram）→
+      全パッケージでエラー0。admin 379件（editDraft 22件・DiagramEditLayer 12件・
+      StationLayoutEditor 11件・facility/schema.test.ts の追加1件を含む）/
+      platform-diagram 182件（snap.test.ts 26件を含む）、すべて pass
+- [x] `pnpm --filter @furatora/admin build` / `pnpm --filter @furatora/frontend build` →
+      両方成功。web の挙動不変（`diagramOverlay` 追加の影響）を確認
+- [x] RTL で pointer イベントによるドラッグをシミュレートするテストを追加
+      （`DiagramEditLayer.test.tsx` 12件、`StationLayoutEditor.test.tsx` 11件。
+      jsdomの`getBoundingClientRect`スタブ、bounds凍結の回帰テスト、
+      保存fetchのURL・method・ボディ全体の検証を含む）
+- [ ] **未実施（開発者への引き継ぎ事項）**: 保存後に DB の値が期待どおりか SQL で確認。
+      PR2の記録のとおり、赤坂見附・表参道は`platforms`が0件、渋谷の一時停車パターンは
+      削除済みのため、**ドラッグ可能な要素を持つ駅が実DBに存在しない可能性が高い**。
+      渋谷（東京メトロ銀座線1番線、`physicalLength=200`が残っている）に停車パターンを
+      1件作るなどの前処理が必要
+- [ ] **未実施（開発者への引き継ぎ事項）**: `e2e/station-layout.spec.ts` へのドラッグ系
+      E2E追加。上記の実データ前提が整ってから着手すること
 
 ---
 

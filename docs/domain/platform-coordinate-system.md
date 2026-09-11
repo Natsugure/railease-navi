@@ -132,6 +132,30 @@ grid item は全員が行の高さに寄与するので、レーンの高さが�
 **レーン0は常に図に接する側に置く。** 図の上下どちらにプレートが来るかは
 `stripOrder` から導き、上に来る場合は段を逆順に描く。
 
+### 編集レイヤ（Admin、絶対配置の4層目）
+
+Admin の駅レイアウトページ（`/stations/[stationId]/layout`）は、上記3層の上に
+**ドラッグ可能なハンドル**を絶対配置で重ねる（`packages/platform-diagram` の
+`PlatformDiagram` が公開する `diagramOverlay` render prop、
+`apps/admin/src/features/station-layout/components/DiagramEditLayer.tsx`）。
+SVGの再レイアウトは行わない。
+
+**x と y で位置の取り方が非対称である**点が上記3層と異なる:
+
+- **x はここでも割合で取る**（`xFraction(x, bounds) * 100%`）。上記の規約と同じ。
+- **y は実測ピクセルで取る**。`<svg>` は `height` を指定しない前提（上記）だが、
+  `preserveAspectRatio="xMidYMid meet"` は要素ボックスが viewBox より**高い**とき
+  `min(rw/vw, rh/vh) = rw/vw`（幅律速）になり、x は正しいまま y だけ
+  `(要素の高さ - viewHeight × scale) / 2` だけずれる。アスペクト比が一致していれば
+  このオフセットは0になるが、「一致している」こと自体は実測でしか確認できない
+  ため、y はハンドル配置のたびに `getBoundingClientRect()` から計算する。
+
+**bounds の凍結**: `computeBounds()` は全座標から算出するため、ドラッグ中に
+座標が動くと bounds も動き、図全体がスケールし直してドラッグが暴れる。
+Admin 側は、保存が確定した値（baseline）が変わったとき（マウント時・保存成功時）
+だけ bounds を再計算する（`StationLayoutEditor` の該当コメント参照）。
+ドラッグ中の未保存値（draft）は bounds の算出に含めない。
+
 ### コンコースの表現
 
 コンコース（`platformLocations`）は座標を持たない。**その位置は、属するアクセス点

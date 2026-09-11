@@ -28,6 +28,20 @@ trainStopPatterns
 **`order` によらず、どの号車も `startMeters < endMeters` を保つ**
 （号車番号の向きが反転しても、区間そのものの向きは反転しない）。
 
+### 隣接号車は境界を共有する
+
+**`carNumber` が隣り合う号車どうしは、`cars[i].endMeters === cars[i+1].startMeters` を保つ。**
+編成に重なり・隙間ができることは物理的に起こり得ないため、この座標系上でも許容しない。
+
+これは `startMeters < endMeters` と違い、DB のカラム制約にはまだ現れていない
+（`trainStopPatternCars` の一意な保証は各行の `startMeters < endMeters` のみ）。
+Admin の図上編集（`apps/admin/src/features/station-layout/domain/editDraft.ts`
+の `moveCarBoundary`）が、境界を動かすときに隣接号車の `end`/`start` を常に
+同値で書き換えることで、この不変条件をクライアント側で構造的に守っている。
+**サーバー側スキーマ（`trainStopPatternSchema`）での強制はまだ入っていない**
+（既存データに不連続な編成が無いことを確認してから追加する。確認作業は
+Issue #95 PR3 の引き継ぎ事項）。
+
 ## 標準車両長
 
 **20.0 m**（`DEFAULT_CAR_LENGTH`）。
