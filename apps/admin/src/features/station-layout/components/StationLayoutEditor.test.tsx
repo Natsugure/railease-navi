@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import {
   render, screen, fireEvent, waitFor,
 } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { MantineProvider } from '@mantine/core';
 import { StationLayoutEditor } from './StationLayoutEditor';
 import { toPlatformLocationPayload } from '@/features/station-layout/domain/editDraft';
@@ -146,7 +147,8 @@ describe('StationLayoutEditor', () => {
     renderEditor();
     dragCellTo30m();
 
-    await fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: '保存' }));
 
     const expectedPayload = toPlatformLocationPayload('platform-1', concourse, { cells: [{ id: 'cell-1', xPositionMeters: 30 }] });
     await waitFor(() => {
@@ -163,7 +165,8 @@ describe('StationLayoutEditor', () => {
     renderEditor();
     dragCellTo30m();
 
-    await fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: '保存' }));
 
     await waitFor(() => {
       expect(mockRefresh).toHaveBeenCalled();
@@ -179,7 +182,8 @@ describe('StationLayoutEditor', () => {
     renderEditor();
     dragCellTo30m();
 
-    await fireEvent.click(screen.getByRole('button', { name: '保存' }));
+    const user = userEvent.setup();
+    await user.click(screen.getByRole('button', { name: '保存' }));
 
     await waitFor(() => {
       expect(notificationsShow).toHaveBeenCalledWith(
