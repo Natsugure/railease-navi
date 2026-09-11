@@ -18,8 +18,8 @@ import {
   stationLines,
 } from '@furatora/database/schema';
 import { asc, eq, inArray } from 'drizzle-orm';
-import type { StationLayoutPageQuery, LayoutStopPatternDTO } from '@/features/station-layout/ports';
-import type { ConcourseDTO, StopPatternCarDTO } from '@furatora/platform-diagram/domain';
+import type { StationLayoutPageQuery, LayoutStopPatternDTO, LayoutConcourseDTO } from '@/features/station-layout/ports';
+import type { StopPatternCarDTO } from '@furatora/platform-diagram/domain';
 
 // apps/web/src/external/query/stationDetailQuery.ts がベース。
 // admin は未公開駅も編集対象のため publishedStation() を通さない。
@@ -55,7 +55,7 @@ async function getLinesByConnectedStation(connectedStationIds: string[]) {
 }
 
 /** 1ホーム分のコンコース（アクセス点・設備・乗換込み） */
-async function getConcourses(platformId: string): Promise<ConcourseDTO[]> {
+async function getConcourses(platformId: string): Promise<LayoutConcourseDTO[]> {
   const locationList = await db
     .select()
     .from(platformLocations)
@@ -76,6 +76,8 @@ async function getConcourses(platformId: string): Promise<ConcourseDTO[]> {
         platformLocationId: facilityConnections.platformLocationId,
         exitLabel: facilityConnections.exitLabel,
         connectedStationId: facilityConnections.connectedStationId,
+        connectedPlatformId: facilityConnections.connectedPlatformId,
+        directionId: facilityConnections.directionId,
         stationName: stations.name,
         directionName: lineDirections.displayName,
         xRangeStart: facilityConnections.xRangeStart,
@@ -108,7 +110,9 @@ async function getConcourses(platformId: string): Promise<ConcourseDTO[]> {
   return locationList.map((loc) => ({
     id: loc.id,
     exits: loc.exits,
+    notes: loc.notes,
     cells: (cellsByLocation.get(loc.id) ?? []).map((cell) => ({
+      id: cell.id,
       xPositionMeters: cell.xPositionMeters !== null ? Number(cell.xPositionMeters) : null,
       facilities: (facilitiesByCell.get(cell.id) ?? []).map((f) => ({
         id: f.id,
@@ -116,10 +120,14 @@ async function getConcourses(platformId: string): Promise<ConcourseDTO[]> {
         typeName: facilityTypeMap[f.typeCode] ?? f.typeCode,
         isWheelchairAccessible: f.isWheelchairAccessible,
         isStrollerAccessible: f.isStrollerAccessible,
+        notes: f.notes,
       })),
     })),
     connections: (connectionsByLocation.get(loc.id) ?? []).map((c) => ({
       stationName: c.stationName,
+      connectedStationId: c.connectedStationId,
+      connectedPlatformId: c.connectedPlatformId,
+      directionId: c.directionId,
       lineNames: linesByStation.get(c.connectedStationId)?.names ?? [],
       lineColors: linesByStation.get(c.connectedStationId)?.colors ?? [],
       directionName: c.directionName ?? null,
