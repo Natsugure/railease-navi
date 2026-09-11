@@ -92,41 +92,16 @@ export function StationLayoutView({ stationId, context }: Props) {
   );
 }
 
-function StationLayoutDiagram({ platform }: { platform: NonNullable<StationLayoutContext['platform']> }) {
-  if (platform.physicalLength === 0) {
-    return (
-      <Text size="sm" c="dimmed" ta="center" py="md">
-        ホーム長が未登録のため図を表示できません
-      </Text>
-    );
-  }
+type LayoutPlatform = NonNullable<StationLayoutContext['platform']>;
 
-  const selectedPattern = platform.stopPatterns.find((sp) => sp.patternId === platform.selectedPatternId);
-  if (!selectedPattern) {
-    return <Text size="sm" c="dimmed" fs="italic">列車情報がありません</Text>;
-  }
-
-  // bounds は全パターンから算出する。選択中の1本だけだとパターン切替のたびに図がスケールし直す
-  const bounds = computeBounds(platform.physicalLength, platform.stopPatterns, platform.concourses);
-  const plateLayout = layoutConcoursePlates(platform.concourses, bounds);
-  const facingLayout = layoutFacingBanners(platform.concourses, bounds);
-
+// 位置未登録の一覧と備考は図を描けない場合（ホーム長0・停車パターン無し）も出す。
+// 座標未入力のデータを見つけるための画面なので、図と一緒に隠すと目的を損なう（web の PlatformDisplay と同じ構成）
+function StationLayoutDiagram({ platform }: { platform: LayoutPlatform }) {
   const undrawable = platform.concourses.filter((c) => !isDrawable(c) && hasDisplayableInfo(c));
 
   return (
     <Stack gap="md">
-      {/* min-w-0 は必須。無いと図のキャンバス幅まで膨らみ overflow-x-auto が効かない */}
-      <div className="min-w-0">
-        <PlatformDiagram
-          pattern={selectedPattern}
-          physicalLength={platform.physicalLength}
-          concourses={platform.concourses}
-          platformSide={platform.platformSide}
-          bounds={bounds}
-          plateLayout={plateLayout}
-          facingLayout={facingLayout}
-        />
-      </div>
+      <DiagramOrMessage platform={platform} />
 
       {undrawable.length > 0 && (
         <div>
@@ -169,5 +144,40 @@ function StationLayoutDiagram({ platform }: { platform: NonNullable<StationLayou
         </Text>
       )}
     </Stack>
+  );
+}
+
+function DiagramOrMessage({ platform }: { platform: LayoutPlatform }) {
+  if (platform.physicalLength === 0) {
+    return (
+      <Text size="sm" c="dimmed" ta="center" py="md">
+        ホーム長が未登録のため図を表示できません
+      </Text>
+    );
+  }
+
+  const selectedPattern = platform.stopPatterns.find((sp) => sp.patternId === platform.selectedPatternId);
+  if (!selectedPattern) {
+    return <Text size="sm" c="dimmed" fs="italic">列車情報がありません</Text>;
+  }
+
+  // bounds は全パターンから算出する。選択中の1本だけだとパターン切替のたびに図がスケールし直す
+  const bounds = computeBounds(platform.physicalLength, platform.stopPatterns, platform.concourses);
+  const plateLayout = layoutConcoursePlates(platform.concourses, bounds);
+  const facingLayout = layoutFacingBanners(platform.concourses, bounds);
+
+  return (
+    // min-w-0 は必須。無いと図のキャンバス幅まで膨らみ overflow-x-auto が効かない
+    <div className="min-w-0">
+      <PlatformDiagram
+        pattern={selectedPattern}
+        physicalLength={platform.physicalLength}
+        concourses={platform.concourses}
+        platformSide={platform.platformSide}
+        bounds={bounds}
+        plateLayout={plateLayout}
+        facingLayout={facingLayout}
+      />
+    </div>
   );
 }

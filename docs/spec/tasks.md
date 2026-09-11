@@ -205,6 +205,27 @@ PR5: 旧ルート削除・引き渡し
       MCPが read-only のためSQLでも戻せない。開発者が db:studio 等で
       手動リセットするか、テスト用の値として残すかを判断すること）
 
+### PR2 レビュー指摘の修正
+
+修正は admin の本PR範囲のみ。web・既存 admin ページの同種の問題は別 Issue に切り出した。
+
+- [x] **ホーム長0・停車パターン無しで位置未登録の一覧と備考が消える**:
+      `StationLayoutView` の図の部分だけを `DiagramOrMessage` に分け、早期 return が
+      図にしか効かないようにした（web の `PlatformDisplay.tsx` と同じ構成。TASK-4.2 の不一致の解消）。
+      `StationLayoutView.test.tsx` を新規作成（2件）
+- [x] **サイン書体 BIZ UDPGothic が当たらない**: `--font-sign` は `:root` で宣言され、中の
+      `var(--font-biz-udpgothic)` も `:root` で解決される。変数クラスが `<body>` にあったため
+      `--font-sign` 全体が無効値になっていた（開発者が DevTools の Rendered Fonts で確認済み）。
+      admin の `layout.tsx` で変数クラスを `<html>` へ移した。
+      web 側と package の `styles.css` のコメント・README は **#107** に切り出した
+- [x] **`stationId` が UUID 検証されず不正パスで500**: `layout/page.tsx` の先頭で
+      `parseUuidParam(stationId)` が偽なら `notFound()`。e2e に1件追加。
+      `facilities/page.tsx` など他の動的ルート（Page 18件・Route Handler 19件）は **#108** に切り出した
+- [x] 検証: admin の `typecheck` / `lint` はエラー0。`test` は335件 pass（新規2件を含む）。
+      e2e の `station-layout.spec.ts` は5件 pass（新規1件を含む）
+- [x] `docs/domain/` の確認: 書体・パスパラメータ検証・位置未登録一覧の表示はいずれも
+      ドメインルールではなく、該当する記述も無いため変更なし
+
 ---
 
 ## PR3: 図上編集

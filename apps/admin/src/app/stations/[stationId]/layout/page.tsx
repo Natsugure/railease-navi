@@ -12,6 +12,9 @@ export default async function StationLayoutPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const { stationId } = await params;
+  // パスの stationId は UUID でなければ 404。検証せずに渡すと Postgres の uuid 型エラーで 500 になる
+  if (!parseUuidParam(stationId)) notFound();
+
   const raw = await searchParams;
   // 不正値は500にせず先頭にフォールバックさせる
   const platformId = parseUuidParam(raw.platformId);

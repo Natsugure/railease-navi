@@ -44,3 +44,9 @@ test('存在しない駅IDは404になる', async ({ page }) => {
   await page.goto('/stations/00000000-0000-0000-0000-000000000000/layout');
   await expect(page.getByText('This page could not be found.')).toBeVisible();
 });
+
+test('UUID形式でない駅IDは500にならず404になる', async ({ page }) => {
+  const response = await page.goto('/stations/not-a-uuid/layout');
+  expect(response?.status()).toBeLessThan(500);
+  await expect(page.getByText('This page could not be found.')).toBeVisible();
+});

@@ -10,6 +10,8 @@ import { auth } from '@/auth';
 import './globals.css';
 
 // ホーム図のサイン用書体。@furatora/platform-diagram/styles.css の --font-sign が参照する
+// 変数クラスは <html> に付けること。--font-sign は :root で宣言されており、中の var() は
+// :root 時点で解決される。<body> に付けると :root では未定義となり --font-sign 全体が無効になる
 const bizUdpGothic = BIZ_UDPGothic({
   subsets: ['latin'],
   weight: ['400', '700'],
@@ -34,11 +36,11 @@ export default async function RootLayout({
   const session = await auth();
 
   return (
-    <html lang="ja" suppressHydrationWarning>
+    <html lang="ja" className={bizUdpGothic.variable} suppressHydrationWarning>
       <head>
         <ColorSchemeScript defaultColorScheme="light" />
       </head>
-      <body className={bizUdpGothic.variable}>
+      <body>
         <MantineProvider defaultColorScheme="light">
           <Notifications />
           {session ? (
