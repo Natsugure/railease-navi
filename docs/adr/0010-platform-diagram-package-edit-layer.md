@@ -104,8 +104,10 @@ ADR-0006 の却下理由は「表示のためだけに」境界を持ち込む�
 - `apps/web/src/features/platform/domain/` と一部 `components/` が
   `packages/platform-diagram` へ移動する。web 側の import パスが変わる
   （挙動は変わらない）
-- `apps/web/src/app/globals.css` から移設したCSS変数の定義を削除し、
-  パッケージの `styles.css` が唯一の定義元になる
+- 移設対象のCSS変数のうち5つ（`--color-bg-card` 等）は、実装時の確認により
+  `@theme inline` 経由で web 全体の基盤トークンでもあると判明したため、
+  `apps/web/src/app/globals.css` からは削除しない。パッケージの `styles.css` には
+  値が完全に一致する解決済みコピーを持たせる（両方に存在する状態で確定）
 - `apps/admin` に `public/icons/` と BIZ UDPGothic フォントが新設される
 - `apps/admin` に `features/station-layout` が新設され、feature間依存の
   実質的な組み合わせが1つ増える（ADR-0001 の依存表に対する追加宣言）

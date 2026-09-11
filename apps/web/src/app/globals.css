@@ -1,5 +1,10 @@
 @import "tailwindcss";
 
+/* packages/ は Tailwind v4 の自動ソース検出の対象外（検出は apps/web 起点で走る）。
+   @furatora/platform-diagram のコンポーネントが使うユーティリティを生成させる。
+   これが無いと図のカード枠・角丸・余白が無言で消える（Issue #95 PR1 の回帰）。 */
+@source "../../../../packages/platform-diagram/src";
+
 /* ============================================================
    Design Tokens — Global Color System
    ============================================================ */

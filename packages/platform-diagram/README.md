@@ -23,6 +23,15 @@ import { PlatformDiagram } from '@furatora/platform-diagram/components';
 import '@furatora/platform-diagram/styles.css'; // layout.tsx で1回だけ import する
 ```
 
+**利用側の `globals.css` に `@source` の追加が必須。** Tailwind v4 の自動ソース検出は
+利用側アプリ（`apps/web`・`apps/admin`）を起点に走り、`packages/` 配下までは辿らない。
+`PlatformDiagram` 等が使う Tailwind ユーティリティ（`rounded-3xl` 等）を生成させるため、
+`@import "tailwindcss";` の直後に以下を追加すること（無いと図のスタイルが無言で消える）。
+
+```css
+@source "../../../../packages/platform-diagram/src";
+```
+
 ## アイコンの複製について
 
 `DiagramSvg` は設備アイコンを `<img>`/`<image>` の `href` で参照する。Next.js の
