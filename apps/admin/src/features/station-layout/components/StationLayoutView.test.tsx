@@ -1,19 +1,34 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { render, screen } from '@testing-library/react';
 import { MantineProvider } from '@mantine/core';
-import type { ConcourseDTO } from '@furatora/platform-diagram/domain';
 import { StationLayoutView } from './StationLayoutView';
-import type { LayoutPlatformDetailDTO, StationLayoutContext } from '@/features/station-layout/ports';
+import type { LayoutPlatformDetailDTO, LayoutConcourseDTO, StationLayoutContext } from '@/features/station-layout/ports';
+
+// StationLayoutView は StationLayoutEditor（Client Component、Issue #95 PR3）を
+// 常に描画するようになった。useRouter() が App Router のコンテキストを要求するためモックする
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({ push: vi.fn(), refresh: vi.fn() }),
+}));
+vi.mock('next/link', () => ({
+  default: ({ href, children, ...props }: { href: string; children?: React.ReactNode }) => (
+    <a href={href} {...props}>{children}</a>
+  ),
+}));
 
 // 座標を持たないコンコース。図には描けず「位置未登録の設備・乗換」に出る
-const undrawableConcourse: ConcourseDTO = {
+const undrawableConcourse: LayoutConcourseDTO = {
   id: 'concourse-1',
   exits: '3番出口',
+  notes: null,
   cells: [
     {
+      id: 'cell-1',
       xPositionMeters: null,
       facilities: [
-        { id: 'f-1', typeCode: 'elevator', typeName: 'エレベーター', isWheelchairAccessible: true, isStrollerAccessible: true },
+        {
+          id: 'f-1', typeCode: 'elevator', typeName: 'エレベーター',
+          isWheelchairAccessible: true, isStrollerAccessible: true, notes: null,
+        },
       ],
     },
   ],
