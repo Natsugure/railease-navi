@@ -8,7 +8,8 @@
 
 ## 進捗（2026-09-11）
 
-- PR1（仕様整備 + ADR-0010 + `packages/platform-diagram` 新設）: 着手中
+- PR1（仕様整備 + ADR-0010 + `packages/platform-diagram` 新設）: 完了
+- PR2（読み取り専用の統合ページ）: 完了
 
 ## フェーズ構成
 
@@ -127,30 +128,82 @@ PR5: 旧ルート削除・引き渡し
 
 ## PR2: 読み取り専用の統合ページ
 
-- [ ] **TASK-3.1** `apps/admin/src/features/station-layout/ports.ts` を新規作成:
+- [x] **調査訂正**: design.md「7クエリ」は実カウントと異なると判明。
+      旧 `facilities/page.tsx` は実際には8箇所（路線解決が駅の路線数ぶん往復する
+      N+1のため、実クエリ本数はホームの路線種別数に依存）。`stationLayoutPageQuery`
+      はこの8箇所 + 列車系5テーブル（`trainStopPatterns`/`trainStopPatternCars`/
+      `trains`/`trainCarStructures`/`trainEquipments`）を1本に集約する
+- [x] **設計訂正**: `StationLayoutContext` は design.md の型（`lines` /
+      `facilityTypes` / `connectedStations` / `trains` を含む）から意図的に縮小した。
+      これらはPR4のインスペクタ（テキストフォーム統合）専用の選択肢データで、
+      読み取り専用のPR2では使わないため（YAGNI）。PR4着手時に `ports.ts` へ追加する
+- [x] **設計訂正**: 「そのホームの先頭の停車パターン」の既定順は
+      `trainStopPatterns` に表示順カラムが無いため新規に決定した:
+      `trains.carCount` 昇順 → `trains.name` 昇順 → `trainStopPatterns.id` 昇順
+      （決定性を保つため id まで含める）
+- [x] **設計訂正**: ホームタブ・パターンタブは design.md が書く `router.push`
+      ではなく通常の `<Link>` で実装した。PR2はページ全体が Server Component の
+      ままで完結し、クライアントJSゼロで済むため。`router.push` 化は PR3 で
+      未保存state確認が必要になった時点で行う
+- [x] **TASK-3.1** `apps/admin/src/features/station-layout/ports.ts` を新規作成:
       `StationLayoutContext` / `LayoutPlatformDTO` / `LayoutPlatformDetailDTO` /
-      `StationLayoutPageQuery`
-- [ ] **TASK-3.2** `apps/admin/src/external/query/stationLayoutPageQuery.ts` を新規作成。
-      1駅分のホーム・コンコース・cells・facilities・connections・停車パターンを
-      1本のQuery Serviceに集約する（`facilities/page.tsx` の7クエリを置き換え）
-- [ ] **TASK-4.1** `apps/admin/src/app/stations/[stationId]/layout/page.tsx` を新規作成
-      （Server Component。`?platformId=&patternId=` を解析し Query Service を1回呼ぶ）
-- [ ] **TASK-4.2** `apps/admin/src/features/station-layout/components/StationLayoutView.tsx`
-      を新規作成（読み取り専用。`@furatora/platform-diagram/components` の
-      `PlatformDiagram` をそのまま描画するだけ。ドラッグ機能は含まない）
-- [ ] **TASK-4.3** `apps/admin/public/icons/` を新設し web の6アイコンPNGをコピー
-- [ ] **TASK-4.4** `apps/admin/src/app/layout.tsx` に BIZ UDPGothic フォントと
+      `LayoutStopPatternDTO` / `StationLayoutPageQuery`
+- [x] **TASK-3.2** `apps/admin/src/external/query/stationLayoutPageQuery.ts` を新規作成。
+      `apps/web/src/external/query/stationDetailQuery.ts` を写経し、
+      (1) `publishedStation()` を外す、(2) 入口を `slug` から `stationId` へ、
+      (3) 選択中ホーム1件にスコープする、の3点を変更した
+- [x] **TASK-4.1** `apps/admin/src/app/stations/[stationId]/layout/page.tsx` を新規作成
+      （Server Component。`?platformId=&patternId=` を `parseUuidParam` で解析し
+      Query Service を1回呼ぶ。所属しないIDは先頭にフォールバック）
+- [x] **TASK-4.2** `apps/admin/src/features/station-layout/components/StationLayoutView.tsx`
+      を新規作成（Server Component。`PlatformDiagram` は選択中の1パターンのみ描画するが、
+      `computeBounds`/`layoutConcoursePlates`/`layoutFacingBanners` は
+      **全パターン**から算出する。パターン切替のたびに図がスケールし直さないため。
+      `apps/web` の `PlatformDisplay.tsx` の合成ロジックを踏襲）
+- [x] **TASK-4.3** `apps/admin/public/icons/` を新設し web の6アイコンPNGをコピー
+- [x] **TASK-4.4** `apps/admin/src/app/layout.tsx` に BIZ UDPGothic フォントと
       `@furatora/platform-diagram/styles.css` の import を追加
-- [ ] **TASK-4.5** `apps/admin/package.json` に `@furatora/platform-diagram: workspace:*` を追加
-- [ ] **TASK-4.6** `di.ts` に `stationLayoutPageQuery` を配線
+- [x] **TASK-4.5** `apps/admin/package.json` に `@furatora/platform-diagram: workspace:*` を追加
+- [x] **TASK-4.6** `di.ts` に `stationLayoutPageQuery` を配線
+- [x] **TASK-4.7**（計画時に追加。当初のタスク分解には無かった）
+      **PR1のCSS回帰を修正**: `packages/platform-diagram` の Tailwind ユーティリティ
+      （`rounded-3xl` 等）が Tailwind v4 の自動ソース検出（`apps/web` / `apps/admin`
+      起点で走り `packages/` に届かない）により生成CSSに含まれていなかった
+      （実測: PR1後のビルド済みCSSに `rounded-3xl` が0件、PR1前は1件）。
+      `apps/web/src/app/globals.css`（PR1ブランチへ追加コミット）と
+      `apps/admin/src/app/globals.css`（本PR）の両方に `@source` を追加して解消。
+      package README に利用側の必須手順として明記し、ADR-0010「影響」節の
+      誤記も合わせて訂正した
 
 ### Phase 5: PR2 検証
 
-- [ ] `pnpm run typecheck` / `lint` / `vitest run` / `next build`（admin）
-- [ ] Neon `development` への直接 SQL 照合（コンコース件数・cells件数・停車パターン件数が
-      図の表示と一致すること）
-- [ ] Playwright で `/stations/{id}/layout` が描画されることを確認
-- [ ] 対面乗り換え駅（赤坂見附・表参道）での手動確認。design.md「手動検証計画」参照
+- [x] `pnpm run typecheck` / `lint` / `test`（リポジトリ全体）→ 全パッケージでエラー0、
+      admin 333件 / platform-diagram 154件 / web 13件、すべて pass
+- [x] `pnpm run build`（リポジトリ全体）→ web・admin ともに成功。
+      両方の生成CSSに `rounded-3xl` が含まれることを確認（TASK-4.7の検証）
+- [x] **Neon `development` への直接SQL照合は実施しなかった**: MCPの認証情報
+      （org_id）がこのセッションから取得できず、かつ read-only 設定のため
+      代替不可。代わりに手動確認で実データとの整合を確認した（下記）
+- [x] Playwright で `/stations/{id}/layout` の描画を確認: `apps/admin/e2e/station-layout.spec.ts`
+      を新規作成（3件、既存の `stations-list.spec.ts` と同じく実DB依存）。
+      ホームタブ切替でURLが変わること、不正なUUIDで500にならず先頭にフォールバック
+      すること、存在しない駅IDで404になることを検証。既存24スペックに回帰なし
+      （`operators.spec.ts` の1件失敗は本PRと無関係の既存問題。「表示優先度」
+      フィールドに関するもので、operator関連ファイルは本PRで未変更）
+- [x] **対面乗り換え駅（赤坂見附・表参道）は実データを持たなかった**: 手動確認の結果、
+      Neon development の両駅（銀座線・丸ノ内線の赤坂見附）とも `platforms` が
+      0件だった（`facilities/page.tsx` でも同じ結果を確認し、クエリ側のバグでない
+      ことを確認済み）。design.md が予告した「facilityConnections 0件」以前に、
+      ホーム自体が未登録だった。**design.md「手動検証計画」の前提が実データと
+      乖離している**ため、代わりに実際に停車パターンを持つ駅（渋谷・東京メトロ
+      銀座線1番線、`platforms.physicalLength` は元々未入力）で確認した:
+      一時的にホーム長200m・停車パターン（銀座線6両・50〜170m）を登録し、
+      図（号車・ドア位置・フリースペース詳細・優先席カード）が web と同じ
+      スタイルで描画されることを確認。停車パターンは確認後に削除したが、
+      **ホーム長200mは削除できずに残っている**（`PlatformForm` のスキーマが
+      `z.number().positive()` で0を拒否するため、UIから未入力状態には戻せない。
+      MCPが read-only のためSQLでも戻せない。開発者が db:studio 等で
+      手動リセットするか、テスト用の値として残すかを判断すること）
 
 ---
 

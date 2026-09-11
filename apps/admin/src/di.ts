@@ -19,6 +19,7 @@ import { dbPlatformEditPageQuery } from '@/external/query/platformEditPageQuery'
 import { dbFacilityEditPageQuery } from '@/external/query/facilityEditPageQuery';
 import { dbStationListPageQuery } from '@/external/query/stationListPageQuery';
 import { dbLineListPageQuery } from '@/external/query/lineListPageQuery';
+import { dbStationLayoutPageQuery } from '@/external/query/stationLayoutPageQuery';
 
 export const platformRepository = dbPlatformRepository;
 export const platformLocationRepository = dbPlatformLocationRepository;
@@ -47,3 +48,6 @@ export const facilityEditPageQuery = dbFacilityEditPageQuery;
 // 一覧の事業者スコープ化（#94）
 export const stationListPageQuery = dbStationListPageQuery;
 export const lineListPageQuery = dbLineListPageQuery;
+
+// 駅レイアウト統合ページ（#95）
+export const stationLayoutPageQuery = dbStationLayoutPageQuery;

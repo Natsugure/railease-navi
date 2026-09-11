@@ -79,6 +79,19 @@ JS import）で取り込む。CSS の `@import` ではなく JS 側 import に�
 import '@furatora/platform-diagram/styles.css';
 ```
 
+**Tailwind の `@source` が別途必須（PR2で判明した回帰への対処）**: `styles.css` の
+JS import だけでは `PlatformDiagram` 等が使う Tailwind ユーティリティ（`rounded-3xl`
+等）は生成されない。Tailwind v4 の自動ソース検出は利用側アプリ（`apps/web` /
+`apps/admin`）を起点に走り、`packages/` 配下までは辿らないため。各アプリの
+`globals.css` に以下を追加する必要がある（`@import "tailwindcss";` の直後）:
+
+```css
+@source "../../../../packages/platform-diagram/src";
+```
+
+この抜けはPR1で発生し、web 側で `rounded-3xl` 等が生成CSSから欠落する回帰と
+なっていた（PR1マージ後・PR2着手時に発覚。PR1ブランチへの追加コミットで修正済み）。
+
 `styles.css` のトークンは web の `globals.css` にある `--gray-*` 等の primitive scale を
 参照せず、**解決済みの具体値**で定義する（下記「移設対象のCSS変数」）。これにより
 admin が web の primitive scale 全体（orange/red/green 等、図に無関係な色）を
@@ -176,24 +189,28 @@ type Props = {
 
 | クエリ | 意味 | 未指定時 |
 |---|---|---|
-| `platformId` | 選択中のホームタブ | 表示順の先頭のホーム |
-| `patternId` | 図に重ねる停車位置パターン | そのホームの先頭のパターン |
+| `platformId` | 選択中のホームタブ | 表示順の先頭のホーム（`platformNumber` 昇順。`platforms` に表示順カラムが無いため） |
+| `patternId` | 図に重ねる停車位置パターン | そのホームの先頭のパターン（`trains.carCount` 昇順 → `trains.name` 昇順 →
+`trainStopPatterns.id` 昇順。`trainStopPatterns` に表示順カラムが無く、PR2で新規に決定した） |
 
 選択中の要素（アクセス点など）は URL に載せない。保存のたびに `platformLocationCells.id`
 が変わる（全置換書き込みのため）ため、クライアント state で持つ。
 
 ## データフロー（PR2、`stationLayoutPageQuery`）
 
+**PR2 実装時の訂正**: 当初この節は `lines` / `facilityTypes` / `connectedStations` /
+`trains` を含む形で構想していたが、これらは PR4（テキストフォーム統合）のインスペクタが
+必要とする選択肢データであり、読み取り専用の PR2 では使わない。YAGNI に従い PR2 の
+実装では持たせず、PR4 着手時に `ports.ts` へ追加する。実際の PR2 実装は以下（PR4 で
+追加するフィールドはコメントで示す）:
+
 ```ts
 // apps/admin/src/features/station-layout/ports.ts
 export type StationLayoutContext = {
   stationName: string;
   platforms: LayoutPlatformDTO[];        // タブ用の軽量情報（全ホーム）
-  platform: LayoutPlatformDetailDTO;     // 選択中のホーム1本の全データ
-  lines: LineWithDirections[];           // 選択肢。サーバーが完全にネストして渡す（#49方式）
-  facilityTypes: FacilityTypeOption[];
-  connectedStations: ConnectedStationOption[];
-  trains: TrainOption[];
+  platform: LayoutPlatformDetailDTO | null; // 選択中のホーム1本の全データ。ホーム0件なら null
+  // PR4 で追加: lines / facilityTypes / connectedStations / trains（インスペクタの選択肢）
 };
 
 export interface StationLayoutPageQuery {
@@ -206,13 +223,17 @@ export interface StationLayoutPageQuery {
 ```
 
 `LayoutPlatformDetailDTO` は `packages/platform-diagram` の `PlatformDTO`（`domain/types.ts`）
-と同じ形を土台に、編集専用フィールド（`platformLocationCells.id` 等、パッケージの
-純粋な表示DTOには不要なID群）を追加したもの。`decimal` → `number` の変換は
-`external/query/stationLayoutPageQuery.ts` の中で行う（既存規約）。
+と同じ形を土台に、`stopPatterns` を `LayoutStopPatternDTO`（`patternId` 付き）に置き換え、
+`selectedPatternId` を追加したもの。編集専用フィールド（`platformLocationCells.id` 等）は
+PR3 で追加する。`decimal` → `number` の変換は `external/query/stationLayoutPageQuery.ts`
+の中で行う（既存規約）。
 
-現在 `facilities/page.tsx`（312行）が `db` を直接 import して7本のクエリを直書きして
-いるのを、この1本に集約する。`eslint.config.mjs` の `legacyExclusions` から
-`facilities/page.tsx` を PR5 で削除する。
+現在 `facilities/page.tsx`（312行）が `db` を直接 import してクエリを直書きしている
+のを、この1本に集約する。**実カウントの訂正**: 「7本」は概算で、実際は8箇所
+（うち路線解決がホームの路線数ぶん往復する N+1）。列車系5テーブル
+（`trainStopPatterns`/`trainStopPatternCars`/`trains`/`trainCarStructures`/
+`trainEquipments`）は元々取得していなかったため新規追加。
+`eslint.config.mjs` の `legacyExclusions` から `facilities/page.tsx` を PR5 で削除する。
 
 ## 編集レイヤの座標変換（PR3）
 
@@ -301,10 +322,16 @@ PR5（旧ルート削除）で一緒に削除する。
 
 ## 手動検証計画
 
-PR2 の時点で、対面乗り換えを持つ駅（赤坂見附・表参道）を確認する。ただし
+PR2 の時点で、対面乗り換えを持つ駅（赤坂見附・表参道）を確認する計画だった。ただし
 `docs/domain/station-master-model.md` 記載のとおり `facilityConnections` は
 実データ0件（#84で粒度見直し中）のため、乗換プレートが表示されないことをもって
-正常とする。
+正常とする、としていた。
+
+**PR2実装時の訂正**: Neon development で実際に確認したところ、両駅（銀座線・
+丸ノ内線の赤坂見附）とも `platforms` が0件（ホーム自体が未登録）だった。
+`facilityConnections` 以前の問題であり、この計画の前提が実データと乖離していた。
+代わりに実際にホーム・停車パターンを持つ駅（渋谷・東京メトロ銀座線）で、一時的に
+ホーム長・停車パターンを登録して図の描画を確認した（tasks.md Phase 5 参照）。
 
 ## ドキュメント更新（PR5 / Phase 7）
 
